@@ -9,6 +9,7 @@ import * as svg from './svg'
 import * as in3d from './in3d'
 import * as fen from './fen'
 import * as viewOnly from './viewOnly'
+import * as chesstrail from './chesstrail'
 
 export interface Unit {
   name: string;
@@ -16,6 +17,7 @@ export interface Unit {
 }
 
 export const list: Unit[] = [
+  chesstrail.defaults,
   basics.defaults, basics.fromFen, basics.lastMoveCrazyhouse, basics.checkHighlight,
   play.initial, play.castling, play.vsRandom, play.fullRandom, play.slowAnim, play.conflictingHold,
   perf.move, perf.select,

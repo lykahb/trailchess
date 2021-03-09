@@ -3,6 +3,7 @@
     "src/*.ts"
   ],
   "compilerOptions": {
+    "moduleResolution": "Node",
     "outDir": "./dist",
     "noImplicitAny": false,
     "strictNullChecks": true,
@@ -12,7 +13,7 @@
     "noImplicitReturns": true,
     "noImplicitThis": true,
     "noUnusedParameters": true,
-    "target": "ES6",
-    "lib": ["DOM", "ES6"]
+    "target": "ES2016",
+    "lib": ["DOM", "ES2016"]
   }
 }
