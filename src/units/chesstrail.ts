@@ -1,4 +1,3 @@
-import {Chess} from 'chess.js';
 import {Chessground} from 'chessground';
 import {Unit} from './unit';
 import {DrawShape} from 'chessground/draw';
@@ -6,6 +5,7 @@ import {Api} from 'chessground/api';
 import {key2pos, pos2key} from 'chessground/util';
 import {Key, Color, Role, Piece} from 'chessground/types';
 import {dropNewPiece} from 'chessground/board';
+import {premove} from 'chessground/premove';
 
 /*
 TODO:
@@ -22,8 +22,6 @@ TODO:
 export const defaults: Unit = {
     name: 'Chesstrail',
     run(el) {
-        const chess = new Chess();
-        chess.clear();
         let chesstrailState: ChesstrailState = {
             stage: {
                 kind: 'MoveOrPlace'
@@ -40,7 +38,7 @@ export const defaults: Unit = {
             color: 'white'
         };
         const cg = Chessground(el, {
-            fen: chess.fen(),
+            fen: '8/8/8/8/8/8/8/8',
             movable: {
                 color: 'white',
                 free: false
@@ -62,15 +60,15 @@ export const defaults: Unit = {
 
         cg.set({
             events: {
-                move: (orig, dest) => onMove(cg, chess, chesstrailState, orig, dest),
-                select: key => onSelect(cg, chess, chesstrailState, key)
+                move: (orig, dest) => onMove(cg, chesstrailState, orig, dest),
+                select: key => onSelect(cg, chesstrailState, key)
             }
         });
         return cg;
     }
 };
 
-function onMove(cg, chess, state, orig, dest): void {
+function onMove(cg, state, orig, dest): void {
     const stage = state.stage;
     if (stage.kind == 'MoveOrPlace' || stage.kind == 'MovePlacedPiece') {
         let trails = getTrailsForMove(cg.state.pieces.get(dest).role, orig, dest);
@@ -79,14 +77,14 @@ function onMove(cg, chess, state, orig, dest): void {
             cg.set({movable: {dests: new Map()}});
             setStage(state, {kind: 'ChooseTrail', trails});
         } else {
-            growTrail(cg, chess, state, orig, trails[0]);
-            playOtherSide(cg, chess, state);
+            growTrail(cg, state, orig, trails[0]);
+            playOtherSide(cg, state);
         }
     } else {
         debugger;
         alert('Moved during a wrong stage ' + stage.kind)
     }
-    drawState(cg, chess, state);
+    drawState(cg, state);
 }
 
 function setStage(state, stage) {
@@ -94,7 +92,7 @@ function setStage(state, stage) {
     console.log('set', stage.kind);
 }
 
-function deletePiece(cg, chess, state: ChesstrailState, pieceId: PieceId) {
+function deletePiece(cg, state: ChesstrailState, pieceId: PieceId) {
     const trail = state.trails.get(pieceId) as Trail;
     const key = trail[trail.length - 1];
     for (const key of trail) {
@@ -103,24 +101,16 @@ function deletePiece(cg, chess, state: ChesstrailState, pieceId: PieceId) {
     state.pieceIds.delete(key);
     state.trails.delete(pieceId);
     cg.state.pieces.delete(key);
-    chess.remove(key);
-}
-
-function updateChessPosition(chess, orig: Key, dest: Key) {
-    if (!chess.move({from: orig, to: dest})) {
-        // The call to move can fail if the move is illegal
-        chess.put(chess.remove(orig), dest);
-    }
 }
 
 // Is called from onmove and on choosing trail. The piece at orig may not exist on the board.
-function growTrail(cg, chess, state: ChesstrailState, orig: Key, trail: Key[]) {
+function growTrail(cg, state: ChesstrailState, orig: Key, trail: Key[]) {
     const pieceId = state.pieceIds.get(orig) as PieceId;
     const dest = trail[trail.length - 1];
     const capturedPieceId = state.pieceIds.get(dest);
 
     if (capturedPieceId) {
-        deletePiece(cg, chess, state, capturedPieceId);
+        deletePiece(cg, state, capturedPieceId);
     }
     state.pieceIds.delete(orig);
 
@@ -128,7 +118,6 @@ function growTrail(cg, chess, state: ChesstrailState, orig: Key, trail: Key[]) {
 
     if (!intersectionSquare) {
         setPieceTrail(state, pieceId, trail);
-        updateChessPosition(chess, orig, dest);
         state.pieceIds.set(dest, pieceId);
         setStage(state,{kind: 'MoveOrPlace'});
         return;
@@ -152,7 +141,6 @@ function growTrail(cg, chess, state: ChesstrailState, orig: Key, trail: Key[]) {
         }
     } else {
         // If the piece does not intersect its own path, it ends up at its destination
-        updateChessPosition(chess, orig, dest);
         state.pieceIds.set(dest, pieceId);
 
         const before = intersectedTrail.slice(0, intersectedTrail.indexOf(intersectionSquare));
@@ -161,13 +149,13 @@ function growTrail(cg, chess, state: ChesstrailState, orig: Key, trail: Key[]) {
     }
 
     if (candidateTrails.length == 0) {
-        deletePiece(cg, chess, state, intersectedPieceId);
+        deletePiece(cg, state, intersectedPieceId);
         setStage(state,{kind: 'MoveOrPlace'});
     } else if (candidateTrails.length == 1) {
         const trail = candidateTrails[0];
         const dest = trail[trail.length - 1];
         setPieceTrail(state, intersectedPieceId, trail);
-        placePiece(cg, chess, state, intersectedPieceId, intersectedPiece, dest);
+        placePiece(cg, state, intersectedPieceId, intersectedPiece, dest);
         setStage(state,{kind: 'MoveOrPlace'});
     } else {
         // const playerPieces = state.availablePieces.get(intersectedPiece.color) as Map<Role, Number>;
@@ -180,7 +168,7 @@ function growTrail(cg, chess, state: ChesstrailState, orig: Key, trail: Key[]) {
         //     setPieceTrail(state, newPieceId, after);
         // }
         cg.set({movable: {dests: new Map()}});
-        deletePiece(cg, chess, state, intersectedPieceId);
+        deletePiece(cg, state, intersectedPieceId);
         setStage(state, {kind: 'ChooseCutTrail', trails: candidateTrails, piece: intersectedPiece, pieceId: intersectedPieceId})
     }
     if (intersectedPieceId != pieceId) {
@@ -212,7 +200,7 @@ function splitSelfTrail(oldTrail: Trail, newTrail: Trail): Trail[] {
     return trails;
 }
 
-function validateState(cg, chess, state: ChesstrailState) {
+function validateState(cg, state: ChesstrailState) {
     let assert = (msg, isGood) => {
         if (!isGood) {
             throw new Error(msg)
@@ -221,7 +209,6 @@ function validateState(cg, chess, state: ChesstrailState) {
     let setEq = (s1, s2) => s1.size === s2.size && [...s1].every(x => s2.has(x));
     const pieceIdSet = new Set(state.pieceIds.values());
     // chess fen is longer - it includes turn
-    assert('Chess positions in cg and chess correspond', chess.fen().startsWith(cg.getFen()));
     assert('Each key has a unique pieceId', pieceIdSet.size == state.pieceIds.size);
     assert('PieceIds and trails correspond', setEq(pieceIdSet, new Set(state.trails.keys())));
 
@@ -346,12 +333,11 @@ type ChesstrailStage = ChesstrailStageMoveOrPlace
     | ChesstrailStageChooseCutTrail
 
 
-function placePiece(cg, chess, state: ChesstrailState, pieceId: PieceId, piece: Piece, key: Key) {
+function placePiece(cg, state: ChesstrailState, pieceId: PieceId, piece: Piece, key: Key) {
     cg.state.pieces.set('a0', piece);
     // dropNewPiece changes color. Restore it.
     dropNewPiece(cg.state, 'a0', key, true);
     cg.state.turnColor = piece.color;
-    chess.put({type: letters[piece.role], color: piece.color[0]}, key);
     state.pieceIds.set(key, pieceId);
 }
 
@@ -362,7 +348,7 @@ function makeNewPiece(state, piece: Piece): PieceId {
     return state.pieceIdCounter++;
 }
 
-function onSelect(cg, chess, state: ChesstrailState, key: Key) {
+function onSelect(cg, state: ChesstrailState, key: Key) {
     const color = cg.state.turnColor;
     const stage = state.stage;
 
@@ -386,9 +372,9 @@ function onSelect(cg, chess, state: ChesstrailState, key: Key) {
         const chosenPiece = stage.choicePieces.get(key);
         if (chosenPiece) {
             const pieceId = makeNewPiece(state, chosenPiece);
-            placePiece(cg, chess, state, pieceId, chosenPiece, stage.placeAt);
+            placePiece(cg, state, pieceId, chosenPiece, stage.placeAt);
             setPieceTrail(state, pieceId, [stage.placeAt]);
-            const dests = new Map([[stage.placeAt, getMoves(cg, chess, state, stage.placeAt, false)]]);
+            const dests = new Map([[stage.placeAt, getMoves(cg, state, stage.placeAt, false)]]);
             cg.set({movable: {dests: dests}});
             cg.selectSquare(stage.placeAt);
             setStage(state, {
@@ -422,19 +408,19 @@ function onSelect(cg, chess, state: ChesstrailState, key: Key) {
         }
         const trail = stage.trails[trailIndex];
         if (stage.kind == 'ChooseCutTrail') {
-            placePiece(cg, chess, state, stage.pieceId, stage.piece, trail[0]);
+            placePiece(cg, state, stage.pieceId, stage.piece, trail[0]);
             setPieceTrail(state, stage.pieceId, [trail[0]]);
             // Artificially move in chessground because this is not a move.
             cg.state.pieces.delete(trail[0]);
             cg.state.pieces.set(trail[trail.length - 1], stage.piece);
         }
-        growTrail(cg, chess, state, trail[0], trail);
-        playOtherSide(cg, chess, state);
+        growTrail(cg, state, trail[0], trail);
+        playOtherSide(cg, state);
     }
     if (stage.kind != 'MovePlacedPiece') {
         // When moving onSelect is called before onmove and the cg.pieces is already updated.
         // Skip the state and let onMove draw it.
-        drawState(cg, chess, state);
+        drawState(cg, state);
     }
 }
 
@@ -459,9 +445,8 @@ function expandTrail(trail: Trail): Key[] {
     return path;
 }
 
-function drawState(cg, chess, state: ChesstrailState) {
+function drawState(cg, state: ChesstrailState) {
     const stage = state.stage;
-    console.log(chess.ascii());
     console.log(cg.state.turnColor);
     console.log(state.stage.kind);
     console.log('pieceIds', JSON.stringify([...state.pieceIds]));
@@ -483,7 +468,7 @@ function drawState(cg, chess, state: ChesstrailState) {
     }
     // shapes.push({ orig: 'e2', dest: 'a8', brush: 'black'});
     cg.setAutoShapes(shapes);
-    validateState(cg, chess, state);
+    validateState(cg, state);
 }
 
 function drawTrails(cg, trails: Map<PieceId, Trail>): DrawShape[] {
@@ -504,7 +489,7 @@ function drawTrail(brush: string, trail: Trail): DrawShape[] {
     return shapes;
 }
 
-function getMoves(cg, chess, state, key: Key, allowCapture: boolean = true): Key[] {
+function getMoves(cg, state, key: Key, allowCapture: boolean = true): Key[] {
     // TODO: limit moves with trails.
     let isValidTrail = trail => {
         // Trail is valid if:
@@ -530,10 +515,9 @@ function getMoves(cg, chess, state, key: Key, allowCapture: boolean = true): Key
         return true;
     };
     const piece = cg.state.pieces.get(key);
-    const ms = chess.moves({square: key, verbose: true, legal: false})
-        .filter(m => allowCapture || m.captured == undefined)
-        .filter(m => getTrailsForMove(piece.role, key, m.to).some(isValidTrail))
-        .map(m => m.to);
+    const ms = premove(cg.state.pieces, key, false)
+        .filter(m => allowCapture || !cg.state.pieces.has(m))
+        .filter(m => getTrailsForMove(piece.role, key, m).some(isValidTrail))
     return ms;
 }
 
@@ -568,31 +552,22 @@ function getAvailablePieces(pieces: Map<Role, Number>): Role[] {
 
 type Trail = Key[];
 
-const letters = {
-    pawn: 'p',
-    rook: 'r',
-    knight: 'n',
-    bishop: 'b',
-    queen: 'q',
-    king: 'k',
-};
-
-function playOtherSide(cg: Api, chess, state: ChesstrailState) {
+function playOtherSide(cg: Api, state: ChesstrailState) {
     const color = state.color == 'white' ? 'black' : 'white';
     state.color = color;
     cg.set({
         turnColor: color,
         movable: {
             color: color,
-            dests: getAllMoves(cg, chess, state)
+            dests: getAllMoves(cg, state)
         }
     });
 }
 
-function getAllMoves(cg, chess: any, state: ChesstrailState): Map<Key, Key[]> {
+function getAllMoves(cg, state: ChesstrailState): Map<Key, Key[]> {
     const dests = new Map();
     for (const s of cg.state.pieces.keys()) {
-        const moves = getMoves(cg, chess, state, s);
+        const moves = getMoves(cg, state, s);
         if (moves.length) dests.set(s, moves);
     }
     return dests;
