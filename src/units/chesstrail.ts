@@ -36,7 +36,8 @@ export const defaults: Unit = {
                 ['white', makeStartingPieces()],
             ]),
             pieceIdCounter: 0,
-            duplicateOnCut: true
+            duplicateOnCut: true,
+            color: 'white'
         };
         const cg = Chessground(el, {
             fen: chess.fen(),
@@ -78,8 +79,8 @@ function onMove(cg, chess, state, orig, dest): void {
             cg.set({movable: {dests: new Map()}});
             setStage(state, {kind: 'ChooseTrail', trails});
         } else {
-            setStage(state, growTrail(cg, chess, state, orig, trails[0]));
-            playOtherSide(cg, chess, state, orig, dest);
+            growTrail(cg, chess, state, orig, trails[0]);
+            playOtherSide(cg, chess, state);
         }
     } else {
         debugger;
@@ -105,74 +106,86 @@ function deletePiece(cg, chess, state: ChesstrailState, pieceId: PieceId) {
     chess.remove(key);
 }
 
+function updateChessPosition(chess, orig: Key, dest: Key) {
+    if (!chess.move({from: orig, to: dest})) {
+        // The call to move can fail if the move is illegal
+        chess.put(chess.remove(orig), dest);
+    }
+}
+
 // Is called from onmove and on choosing trail. The piece at orig may not exist on the board.
-function growTrail(cg, chess, state: ChesstrailState, orig: Key, trail: Key[]): ChesstrailStage {
+function growTrail(cg, chess, state: ChesstrailState, orig: Key, trail: Key[]) {
     const pieceId = state.pieceIds.get(orig) as PieceId;
-    const capturedPieceId = state.pieceIds.get(trail[trail.length - 1]);
+    const dest = trail[trail.length - 1];
+    const capturedPieceId = state.pieceIds.get(dest);
 
     if (capturedPieceId) {
         deletePiece(cg, chess, state, capturedPieceId);
     }
     state.pieceIds.delete(orig);
-    const dest = trail[trail.length - 1];
-    state.pieceIds.set(dest, pieceId);
 
     const intersectionSquare = trail.slice(1).find(key => state.trailMap.has(key));
-    if (intersectionSquare) {
-        const intersectedPieceId = state.trailMap.get(intersectionSquare) as PieceId;
-        const intersectedTrail = state.trails.get(intersectedPieceId) as Trail;
-        const intersectedPiece: Piece = cg.state.pieces.get(intersectedTrail[intersectedTrail.length - 1]);
-        const before = intersectedTrail.slice(0, intersectedTrail.indexOf(intersectionSquare));
-        const after = intersectedTrail.slice(intersectedTrail.indexOf(intersectionSquare) + 1);
-        const isValidBefore = isValidTrail(intersectedPiece.role, before);
-        const isValidAfter = isValidTrail(intersectedPiece.role, after);
 
-        if (intersectedPieceId != pieceId) {
-            setPieceTrail(state, pieceId, trail);
-        }
+    if (!intersectionSquare) {
+        setPieceTrail(state, pieceId, trail);
+        updateChessPosition(chess, orig, dest);
+        state.pieceIds.set(dest, pieceId);
+        setStage(state,{kind: 'MoveOrPlace'});
+        return;
+    }
 
-        if (intersectedPieceId == pieceId) {
-            if (capturedPieceId) {
-                // If a piece intersected its own path and captured,
-                // it must stay on the square where the capture happened.
-                // TODO: this does not handle duplication.
-                state.trails.set(pieceId, after);
-                before.forEach(key => state.trailMap.delete(key));
-            } else {
-                // A piece can follow in its own trail or intersect it many times.
-                // So, we can have more than one trail.
-                const trails = splitSelfTrail(intersectedTrail, trail)
-                    .filter(t => isValidTrail(intersectedPiece.role, t));
+    const intersectedPieceId = state.trailMap.get(intersectionSquare) as PieceId;
+    const intersectedTrail = state.trails.get(intersectedPieceId) as Trail;
+    const intersectedPiece: Piece = cg.state.pieces.get(intersectedTrail[intersectedTrail.length - 1]);
 
-            }
-        } else if (isValidBefore && isValidAfter) {
-            const playerPieces = state.availablePieces.get(intersectedPiece.color) as Map<Role, Number>;
-            const pieceCount = playerPieces.get(intersectedPiece.role) as number;
-            if (state.duplicateOnCut && pieceCount > 0) {
-                const newPieceId = makeNewPiece(state, intersectedPiece);
-                placePiece(cg, chess, state, intersectedPieceId, intersectedPiece, before[before.length - 1]);
-                setPieceTrail(state, intersectedPieceId, before);
-                placePiece(cg, chess, state, newPieceId, intersectedPiece, after[after.length - 1]);
-                setPieceTrail(state, newPieceId, after);
-            } else {
-                cg.set({movable: {dests: new Map()}});
-                // TODO: Delete everything about the piece whose trail needs to be chosen.
-                deletePiece(cg, chess, state, intersectedPieceId);
-                return {kind: 'ChooseTrail', trails: [before, after]};
-            }
-        } else if (isValidBefore) {
-            state.trails.set(intersectedPieceId, before);
-            after.forEach(key => state.trailMap.delete(key));
-        } else if (isValidAfter) {
-            state.trails.set(intersectedPieceId, after);
-            before.forEach(key => state.trailMap.delete(key));
-        } else {
-            deletePiece(cg, chess, state, intersectedPieceId);
+    let candidateTrails: Trail[] = [];
+
+    if (intersectedPieceId == pieceId) {
+        // A piece can follow in its own trail or intersect it many times.
+        // So, we can have more than one trail.
+        candidateTrails = splitSelfTrail(intersectedTrail, trail)
+            .filter(t => isValidTrail(intersectedPiece.role, t));
+        if (capturedPieceId) {
+            // If a piece intersected its own path and captured,
+            // it must stay on the square where the capture happened.
+            candidateTrails = [candidateTrails[candidateTrails.length - 1]];
         }
     } else {
+        // If the piece does not intersect its own path, it ends up at its destination
+        updateChessPosition(chess, orig, dest);
+        state.pieceIds.set(dest, pieceId);
+
+        const before = intersectedTrail.slice(0, intersectedTrail.indexOf(intersectionSquare));
+        const after = intersectedTrail.slice(intersectedTrail.indexOf(intersectionSquare) + 1);
+        candidateTrails = [before, after].filter(t => isValidTrail(intersectedPiece.role, t));
+    }
+
+    if (candidateTrails.length == 0) {
+        deletePiece(cg, chess, state, intersectedPieceId);
+        setStage(state,{kind: 'MoveOrPlace'});
+    } else if (candidateTrails.length == 1) {
+        const trail = candidateTrails[0];
+        const dest = trail[trail.length - 1];
+        setPieceTrail(state, intersectedPieceId, trail);
+        placePiece(cg, chess, state, intersectedPieceId, intersectedPiece, dest);
+        setStage(state,{kind: 'MoveOrPlace'});
+    } else {
+        // const playerPieces = state.availablePieces.get(intersectedPiece.color) as Map<Role, Number>;
+        // const pieceCount = playerPieces.get(intersectedPiece.role) as number;
+        // if (state.duplicateOnCut && pieceCount > 0) {
+        //     const newPieceId = makeNewPiece(state, intersectedPiece);
+        //     placePiece(cg, chess, state, intersectedPieceId, intersectedPiece, before[before.length - 1]);
+        //     setPieceTrail(state, intersectedPieceId, before);
+        //     placePiece(cg, chess, state, newPieceId, intersectedPiece, after[after.length - 1]);
+        //     setPieceTrail(state, newPieceId, after);
+        // }
+        cg.set({movable: {dests: new Map()}});
+        deletePiece(cg, chess, state, intersectedPieceId);
+        setStage(state, {kind: 'ChooseCutTrail', trails: candidateTrails, piece: intersectedPiece, pieceId: intersectedPieceId})
+    }
+    if (intersectedPieceId != pieceId) {
         setPieceTrail(state, pieceId, trail);
     }
-    return {kind: 'MoveOrPlace'};
 }
 
 function splitSelfTrail(oldTrail: Trail, newTrail: Trail): Trail[] {
@@ -294,6 +307,7 @@ type ChesstrailState = {
     pieceIdCounter: number
     stage: ChesstrailStage
     duplicateOnCut: boolean
+    color: Color
 }
 
 type PieceId = Number
@@ -318,10 +332,18 @@ interface ChesstrailStageChooseTrail {
     trails: Trail[]
 }
 
+interface ChesstrailStageChooseCutTrail {
+    kind: 'ChooseCutTrail',
+    trails: Trail[]
+    piece: Piece
+    pieceId: PieceId
+}
+
 type ChesstrailStage = ChesstrailStageMoveOrPlace
     | ChesstrailStagePlace
     | ChesstrailStageMovePlacedPiece
     | ChesstrailStageChooseTrail
+    | ChesstrailStageChooseCutTrail
 
 
 function placePiece(cg, chess, state: ChesstrailState, pieceId: PieceId, piece: Piece, key: Key) {
@@ -363,7 +385,9 @@ function onSelect(cg, chess, state: ChesstrailState, key: Key) {
     } else if (stage.kind == 'Place') {
         const chosenPiece = stage.choicePieces.get(key);
         if (chosenPiece) {
-            placePiece(cg, chess, state, makeNewPiece(state, chosenPiece), chosenPiece, stage.placeAt);
+            const pieceId = makeNewPiece(state, chosenPiece);
+            placePiece(cg, chess, state, pieceId, chosenPiece, stage.placeAt);
+            setPieceTrail(state, pieceId, [stage.placeAt]);
             const dests = new Map([[stage.placeAt, getMoves(cg, chess, state, stage.placeAt, false)]]);
             cg.set({movable: {dests: dests}});
             cg.selectSquare(stage.placeAt);
@@ -388,7 +412,7 @@ function onSelect(cg, chess, state: ChesstrailState, key: Key) {
             // Dests become undefined after move.
             cg.selectSquare(stage.placedAt);
         }
-    } else if (stage.kind == 'ChooseTrail') {
+    } else if (stage.kind == 'ChooseTrail' || stage.kind == 'ChooseCutTrail') {
         const trailsWithKey = stage.trails
             .map(t => t.includes(key));
         const trailIndex = trailsWithKey.indexOf(true);
@@ -397,10 +421,21 @@ function onSelect(cg, chess, state: ChesstrailState, key: Key) {
             return;
         }
         const trail = stage.trails[trailIndex];
-        playOtherSide(cg, chess, state, trail[0], trail[trail.length - 1]);
-        setStage(state, growTrail(cg, chess, state, trail[0], trail));
+        if (stage.kind == 'ChooseCutTrail') {
+            placePiece(cg, chess, state, stage.pieceId, stage.piece, trail[0]);
+            setPieceTrail(state, stage.pieceId, [trail[0]]);
+            // Artificially move in chessground because this is not a move.
+            cg.state.pieces.delete(trail[0]);
+            cg.state.pieces.set(trail[trail.length - 1], stage.piece);
+        }
+        growTrail(cg, chess, state, trail[0], trail);
+        playOtherSide(cg, chess, state);
     }
-    drawState(cg, chess, state);
+    if (stage.kind != 'MovePlacedPiece') {
+        // When moving onSelect is called before onmove and the cg.pieces is already updated.
+        // Skip the state and let onMove draw it.
+        drawState(cg, chess, state);
+    }
 }
 
 function expandTrail(trail: Trail): Key[] {
@@ -425,7 +460,7 @@ function expandTrail(trail: Trail): Key[] {
 }
 
 function drawState(cg, chess, state: ChesstrailState) {
-    validateState(cg, chess, state);
+    const stage = state.stage;
     console.log(chess.ascii());
     console.log(cg.state.turnColor);
     console.log(state.stage.kind);
@@ -433,14 +468,22 @@ function drawState(cg, chess, state: ChesstrailState) {
     console.log('trailMap', JSON.stringify([...state.trailMap]));
     console.log('trails', JSON.stringify([...state.trails]));
     const shapes: DrawShape[] = drawTrails(cg, state.trails);
-    if (state.stage.kind == 'Place') {
-        shapes.push(...displayChoice(state.stage.choicePieces));
-    } else if (state.stage.kind == 'ChooseTrail') {
-        state.stage.trails.forEach(trail =>
+    if (stage.kind == 'Place') {
+        shapes.push(...displayChoice(stage.choicePieces));
+    } else if (stage.kind == 'ChooseTrail' || stage.kind == 'ChooseCutTrail') {
+        stage.trails.forEach(trail =>
             shapes.push(...drawTrail('paleGreen', trail)));
+    }
+    if (stage.kind == 'ChooseCutTrail') {
+        stage.trails.forEach(trail =>
+            shapes.push({
+                orig: trail[trail.length - 1],
+                piece: stage.piece
+            }));
     }
     // shapes.push({ orig: 'e2', dest: 'a8', brush: 'black'});
     cg.setAutoShapes(shapes);
+    validateState(cg, chess, state);
 }
 
 function drawTrails(cg, trails: Map<PieceId, Trail>): DrawShape[] {
@@ -534,21 +577,13 @@ const letters = {
     king: 'k',
 };
 
-export function toColor(chess: any): Color {
-    return (chess.turn() === 'w') ? 'white' : 'black';
-}
-
-function playOtherSide(cg: Api, chess, state: ChesstrailState, orig, dest) {
-    const move = chess.move({from: orig, to: dest});
-    if (!move) {
-        // TODO: this happens when chess considers the move illegal.
-        alert('chess rejected move');
-        chess.put(chess.remove(orig), dest);
-    }
+function playOtherSide(cg: Api, chess, state: ChesstrailState) {
+    const color = state.color == 'white' ? 'black' : 'white';
+    state.color = color;
     cg.set({
-        turnColor: toColor(chess),
+        turnColor: color,
         movable: {
-            color: toColor(chess),
+            color: color,
             dests: getAllMoves(cg, chess, state)
         }
     });
