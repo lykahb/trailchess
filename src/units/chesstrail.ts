@@ -89,12 +89,15 @@ function onMove(cg, state, orig, dest): void {
             deletePiece(cg, state, pieceId, false);
             cg.state.pieces.delete(dest);
             setStage(state, {kind: 'ChooseTrail', trails, piece, pieceId});
-        } else {
+        } else if (trails.length == 1) {
             growTrail(cg, state, orig, trails[0]);
+        } else {
+            debugger;
+            alert('A valid move has zero trails ' + stage.kind)
         }
     } else {
         debugger;
-        alert('Moved during a wrong stage ' + stage.kind)
+        alert('Moved during a wrong stage ' + stage.kind);
     }
     drawState(cg, state);
 }
@@ -426,8 +429,12 @@ function onSelect(cg, state: ChesstrailState, key: Key) {
     } else if (stage.kind == 'MovePlacedPiece') {
         if (key == stage.placedAt) {
             if (cg.state.draggable.current?.previouslySelected == stage.placedAt) {
+                const piece = cg.state.pieces.get(key);
                 deletePiece(cg, state, state.pieceIds.get(key) as number, true);
                 cg.set({movable: {dests: stage.oldDests}});
+                const playerPieces = state.availablePieces.get(piece.color) as Map<Role, Number>;
+                const pieceCount = playerPieces.get(piece.role) as number;
+                playerPieces.set(piece.role, pieceCount + 1);
                 setStage(state, {kind: 'MoveOrPlace'});
             }
         } else {
