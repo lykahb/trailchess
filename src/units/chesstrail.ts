@@ -16,7 +16,7 @@ TODO:
 2. Logic of cutting trails. DONE.
 3. Override moves for pawns. DONE.
 4. When moving a placed piece do not let the dests disappear when clicked on a non-reachable square. DONE.
-5. Knight loses its past trail. TODO
+5. Knight loses its past trail. DONE
 6. Pawn promotion. DONE
 7. Remove just placed piece when clicked on it. DONE.
 8. Bug when cannot choose a piece when it is displayed on top of a piece on the board. DONE.
@@ -86,9 +86,10 @@ function onMove(cg, state, orig, dest): void {
         if (trails.length > 1) {
             // Disable moves until the trail is chosen.
             cg.set({movable: {dests: new Map()}});
+            const oldTrail = state.trails.get(pieceId);
             deletePiece(cg, state, pieceId, false);
             cg.state.pieces.delete(dest);
-            setStage(state, {kind: 'ChooseTrail', trails, piece, pieceId});
+            setStage(state, {kind: 'ChooseTrail', trails, piece, pieceId, oldTrail});
         } else if (trails.length == 1) {
             growTrail(cg, state, orig, trails[0]);
         } else {
@@ -347,6 +348,7 @@ interface ChesstrailStageMovePlacedPiece {
 interface ChesstrailStageChooseTrail {
     kind: 'ChooseTrail'
     trails: Trail[]
+    oldTrail?: Trail
     piece: Piece
     pieceId: PieceId
 }
@@ -453,11 +455,9 @@ function onSelect(cg, state: ChesstrailState, key: Key) {
             return;
         }
         const trail = stage.trails[trailIndex];
-        placePiece(cg, state, stage.pieceId, stage.piece, trail[0]);
-        setPieceTrail(state, stage.pieceId, [trail[0]]);
-        // Artificially move in chessground because this is not a move.
-        cg.state.pieces.delete(trail[0]);
-        cg.state.pieces.set(trail[trail.length - 1], stage.piece);
+        placePiece(cg, state, stage.pieceId, stage.piece, trail[trail.length - 1]);
+        const startTrail = stage.oldTrail ? stage.oldTrail : [trail[0]];
+        setPieceTrail(state, stage.pieceId, startTrail);
         growTrail(cg, state, trail[0], trail);
     }
     drawState(cg, state);
@@ -476,6 +476,9 @@ function drawState(cg, state: ChesstrailState) {
     } else if (stage.kind == 'ChooseTrail') {
         stage.trails.forEach(trail =>
             shapes.push(...drawTrail('paleGreen', trail)));
+        if (stage.oldTrail) {
+            shapes.push(...drawTrail(stage.piece.color, stage.oldTrail));
+        }
     }
     if (stage.kind == 'ChooseTrail') {
         stage.trails.forEach(trail =>
