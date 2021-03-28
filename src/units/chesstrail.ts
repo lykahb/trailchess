@@ -22,6 +22,7 @@ TODO:
 8. Bug when cannot choose a piece when it is displayed on top of a piece on the board. DONE.
 9. Display counter of available pieces. TODO
 10. Do not let a piece that was just placed to cut the trails. DONE.
+11. After knight captures a piece an error happens. DONE.
 
  */
 
@@ -81,6 +82,12 @@ function onMove(cg, state, orig, dest): void {
         const piece = cg.state.pieces.get(dest);
         const pieceId = state.pieceIds.get(orig);
         const allowIntersect = stage.kind != 'MovePlacedPiece';
+        const capturedPieceId = state.pieceIds.get(dest);
+        if (capturedPieceId != undefined) {
+            // At this point cg.state.pieces already has the moved piece that captured, so don't delete on the cg board.
+            deletePiece(cg, state, capturedPieceId, false);
+        }
+
         let trails = getTrailsForMove(piece.role, orig, dest)
             .filter(t => isValidFutureTrail(cg, state, piece, t, allowIntersect, true));
         if (trails.length > 1) {
@@ -91,7 +98,7 @@ function onMove(cg, state, orig, dest): void {
             cg.state.pieces.delete(dest);
             setStage(state, {kind: 'ChooseTrail', trails, piece, pieceId, oldTrail});
         } else if (trails.length == 1) {
-            growTrail(cg, state, orig, trails[0]);
+            growTrail(cg, state, pieceId, trails[0], capturedPieceId != undefined);
         } else {
             debugger;
             alert('A valid move has zero trails ' + stage.kind)
@@ -122,11 +129,9 @@ function deletePiece(cg, state: ChesstrailState, pieceId: PieceId, deleteCg) {
 }
 
 // Is called from onmove and on choosing trail. The piece at orig may not exist on the board.
-function growTrail(cg: Api, state: ChesstrailState, orig: Key, trail: Key[]) {
-    const pieceId = state.pieceIds.get(orig) as PieceId;
+function growTrail(cg: Api, state: ChesstrailState, pieceId: PieceId, trail: Key[], captured: boolean) {
     const dest = trail[trail.length - 1];
     const piece = cg.state.pieces.get(dest) as Piece;
-    const capturedPieceId = state.pieceIds.get(dest);
 
     const endMove = () => {
         if (isPawnPromoted(cg, trail)) {
@@ -136,12 +141,7 @@ function growTrail(cg: Api, state: ChesstrailState, orig: Key, trail: Key[]) {
         setStage(state, {kind: 'MoveOrPlace'});
     }
 
-    if (capturedPieceId != undefined) {
-        // At this point cg.state.pieces already has the moved piece that captured, so don't delete on the cg board.
-        deletePiece(cg, state, capturedPieceId, false);
-    }
-    state.pieceIds.delete(orig);
-
+    state.pieceIds.delete(trail[0]);
     const intersectionSquare = trail.slice(1).find(key => state.trailMap.has(key));
 
     if (!intersectionSquare) {
@@ -165,7 +165,7 @@ function growTrail(cg: Api, state: ChesstrailState, orig: Key, trail: Key[]) {
         // So, we can have more than one trail.
         candidateTrails = splitSelfTrail(intersectedTrail, trail)
             .filter(t => isValidSubTrail(t));
-        if (capturedPieceId) {
+        if (captured) {
             // If a piece intersected its own path and captured,
             // it must stay on the square where the capture happened.
             candidateTrails = [candidateTrails[candidateTrails.length - 1]];
@@ -183,7 +183,8 @@ function growTrail(cg: Api, state: ChesstrailState, orig: Key, trail: Key[]) {
     } else if (candidateTrails.length == 1) {
         const trail = candidateTrails[0];
         const dest = trail[trail.length - 1];
-        placePiece(cg, state, intersectedPieceId, intersectedPiece, dest);
+        placePieceCG(cg, intersectedPiece, dest);
+        state.pieceIds.set(dest, pieceId);
         setPieceTrail(state, intersectedPieceId, trail);
         endMove();
     } else {
@@ -359,12 +360,11 @@ type ChesstrailStage = ChesstrailStageMoveOrPlace
     | ChesstrailStageChooseTrail
 
 
-function placePiece(cg, state: ChesstrailState, pieceId: PieceId, piece: Piece, key: Key) {
+function placePieceCG(cg, piece: Piece, key: Key) {
     cg.state.pieces.set('a0', piece);
     // dropNewPiece changes color. Restore it.
     dropNewPiece(cg.state, 'a0', key, true);
     cg.state.turnColor = piece.color;
-    state.pieceIds.set(key, pieceId);
 }
 
 function makeNewPiece(state, piece: Piece): PieceId {
@@ -406,7 +406,8 @@ function onSelect(cg, state: ChesstrailState, key: Key) {
         if (chosenPiece) {
             const pieceId = makeNewPiece(state, chosenPiece);
             const oldDests = cg.state.movable.dests;  // it needs to be before placing piece
-            placePiece(cg, state, pieceId, chosenPiece, stage.placeAt);
+            placePieceCG(cg, chosenPiece, stage.placeAt);
+            state.pieceIds.set(stage.placeAt, pieceId);
             setPieceTrail(state, pieceId, [stage.placeAt]);
             const dests = new Map([[stage.placeAt, getMoves(cg, state, stage.placeAt, false, false)]]);
             cg.set({movable: {dests: dests}});
@@ -455,10 +456,13 @@ function onSelect(cg, state: ChesstrailState, key: Key) {
             return;
         }
         const trail = stage.trails[trailIndex];
-        placePiece(cg, state, stage.pieceId, stage.piece, trail[trail.length - 1]);
+
+        placePieceCG(cg, stage.piece, trail[trail.length - 1]);
+        state.pieceIds.set(trail[0], stage.pieceId);
+
         const startTrail = stage.oldTrail ? stage.oldTrail : [trail[0]];
         setPieceTrail(state, stage.pieceId, startTrail);
-        growTrail(cg, state, trail[0], trail);
+        growTrail(cg, state, stage.pieceId, trail, false);
     }
     drawState(cg, state);
 }
