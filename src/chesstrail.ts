@@ -1,5 +1,4 @@
 import {Chessground} from 'chessground';
-import {Unit} from './unit';
 import {DrawShape} from 'chessground/draw';
 import {Api} from 'chessground/api';
 import {anim} from 'chessground/anim';
@@ -26,7 +25,7 @@ TODO:
 
  */
 
-export const defaults: Unit = {
+export const defaults = {
     name: 'Chesstrail',
     run(el) {
         let chesstrailState: ChesstrailState = {
@@ -72,6 +71,7 @@ export const defaults: Unit = {
                 select: key => onSelect(cg, chesstrailState, key)
             }
         });
+        makePlacementListener(cg, chesstrailState);
         return cg;
     }
 };
@@ -337,7 +337,8 @@ interface ChesstrailStageMoveOrPlace {
 interface ChesstrailStagePlace {
     kind: 'Place'
     placeAt: Key
-    choicePieces: Map<Key, Piece>
+    availablePieces: Map<Role, Number>
+    color: Color
 }
 
 interface ChesstrailStageMovePlacedPiece {
@@ -367,12 +368,12 @@ function placePieceCG(cg, piece: Piece, key: Key) {
     cg.state.turnColor = piece.color;
 }
 
-function makeNewPiece(state, piece: Piece): PieceId {
-    const playerPieces = state.availablePieces.get(piece.color) as Map<Role, Number>;
-    const pieceCount = playerPieces.get(piece.role) as number;
-    playerPieces.set(piece.role, pieceCount - 1);
-    return state.pieceIdCounter++;
-}
+// function makeNewPiece(state, piece: Piece): PieceId {
+//     const playerPieces = state.availablePieces.get(piece.color) as Map<Role, Number>;
+//     const pieceCount = playerPieces.get(piece.role) as number;
+//     playerPieces.set(piece.role, pieceCount - 1);
+//     return state.pieceIdCounter++;
+// }
 
 function onSelect(cg, state: ChesstrailState, key: Key) {
     const color = cg.state.turnColor;
@@ -394,41 +395,15 @@ function onSelect(cg, state: ChesstrailState, key: Key) {
         }
 
         const availablePieces = state.availablePieces.get(color) as Map<Role, Number>;
-        const choicePieces = placeChoicePieces(key, color, availablePieces);
 
         setStage(state, {
             kind: 'Place',
-            choicePieces,
+            color,
+            availablePieces,
             placeAt: key
         });
     } else if (stage.kind == 'Place') {
-        const chosenPiece = stage.choicePieces.get(key);
-        if (chosenPiece) {
-            const pieceId = makeNewPiece(state, chosenPiece);
-            const oldDests = cg.state.movable.dests;  // it needs to be before placing piece
-            placePieceCG(cg, chosenPiece, stage.placeAt);
-            state.pieceIds.set(stage.placeAt, pieceId);
-            setPieceTrail(state, pieceId, [stage.placeAt]);
-            const dests = new Map([[stage.placeAt, getMoves(cg, state, stage.placeAt, false, false)]]);
-            cg.set({movable: {dests: dests}});
-            cg.selectSquare(stage.placeAt);
-            setStage(state, {
-                kind: 'MovePlacedPiece',
-                oldDests: oldDests,
-                placedAt: stage.placeAt
-            });
-        } else if (!state.trailMap.has(key)) {
-            const availablePieces = state.availablePieces.get(color) as Map<Role, Number>;
-            // Place on another square
-            setStage(state, {
-                kind: 'Place',
-                choicePieces: placeChoicePieces(key, color, availablePieces),
-                placeAt: key
-            });
-        } else {
-            // A player can change their mind and move instead of placing.
-            setStage(state, {kind: 'MoveOrPlace'});
-        }
+        alert('Wrong place');
     } else if (stage.kind == 'MovePlacedPiece') {
         if (key == stage.placedAt) {
             if (cg.state.draggable.current?.previouslySelected == stage.placedAt) {
@@ -476,7 +451,8 @@ function drawState(cg, state: ChesstrailState) {
     console.log('trails', JSON.stringify([...state.trails]));
     const shapes: DrawShape[] = drawTrails(cg, state.trails);
     if (stage.kind == 'Place') {
-        shapes.push(...displayChoice(stage.choicePieces));
+        // TODO: https://github.com/ornicar/lila/blob/master/ui/analyse/src/promotion.ts
+        displayChoice(cg, stage.placeAt, stage.color, stage.availablePieces);
     } else if (stage.kind == 'ChooseTrail') {
         stage.trails.forEach(trail =>
             shapes.push(...drawTrail('paleGreen', trail)));
@@ -627,34 +603,96 @@ function getMoves(cg, state, key: Key, allowCapture, allowIntersect): Key[] {
         .filter(m => getTrailsForMove(piece.role, key, m).some(t => isValidFutureTrail(cg, state, piece, t, allowIntersect, false)));
 }
 
-function placeChoicePieces(key: Key, color: Color, pieces: Map<Role, Number>): Map<Key, Piece> {
-    const availablePieces = getAvailablePieces(pieces);
-    const rank = Number(key[1]);
-    const file = key[0];
-    const startingRank = Math.max(1, rank - availablePieces.length + 1);
-    return new Map(availablePieces.map((role, i) =>
-        [file + (startingRank + i) as Key, {role, color}]
-    ));
+function displayChoice(cg, placeAt: Key, color: Color, pieces: Map<Role, Number>): void {
+    const placementChoice = document.getElementById('placement-choice');
+    if (placementChoice == null) {
+        throw Error('Cannot find placement choice element');
+    }
+    let left = (7 - key2pos(placeAt)[0]) * 12.5;
+    const orientation: Color = cg.state.orientation;
+    if (orientation === 'white') left = 87.5 - left;
+    // const startingRank = Math.min(5, 8 - key2pos(placeAt)[1]); // We always display five pieces.
+    // const vertical = color === orientation ? 'top' : 'bottom';
+
+    placementChoice.classList.add('active');
+    placementChoice.classList.add(color);
+    let i = 0;
+    for (const [role, count] of pieces) {
+        // const top = (color === orientation ? i : 7 - i) * 12.5;
+        const top = i * 12.5;
+        i++;
+        const pieceEl = placementChoice.querySelector(`piece.${role}.${color}`) as Element;
+        const squareEl = pieceEl.parentNode as HTMLElement;
+        squareEl.dataset.count = count.toString();
+        squareEl.classList.add('active');
+        squareEl.style.top = `${top}%`;
+        squareEl.style.left = `${left}%`;
+    }
 }
 
-function displayChoice(pieces: Map<Key, Piece>): DrawShape[] {
-    const shapes: DrawShape[] = [];
-    pieces.forEach((piece, key) => shapes.push({
-        orig: key,
-        piece: piece
-    }));
-    return shapes;
-}
+function makePlacementListener(cg, state) {
+    const placementChoice = document.getElementById('placement-choice');
+    if (placementChoice == null) {
+        throw Error('Cannot find placement choice element');
+    }
 
-function getAvailablePieces(pieces: Map<Role, Number>): Role[] {
-    const availablePieces: Role[] = [];
-    for (const [piece, num] of pieces) {
-        if (num > 0) {
-            availablePieces.push(piece);
+    function hidePlacement() {
+        if (placementChoice == null) {
+            throw Error('Cannot find placement choice element');
+        }
+        placementChoice.classList.remove('active');
+        placementChoice.querySelectorAll('square.active').forEach(square =>
+            square.classList.remove('active')
+        );
+    }
+
+    function makeListener(piece) {
+        return ev => {
+            ev.stopImmediatePropagation();
+            const stage = state.stage;
+            if (stage.kind != 'Place') {
+                alert('The stage should be Place');
+            }
+            const playerPieces = state.availablePieces.get(piece.color) as Map<Role, Number>;
+            const pieceCount = playerPieces.get(piece.role) as number;
+            if (pieceCount < 1) {
+                return;
+            }
+            playerPieces.set(piece.role, pieceCount - 1);
+            const pieceId = state.pieceIdCounter++;
+            const oldDests = cg.state.movable.dests;  // it needs to be saved before placing piece
+            placePieceCG(cg, piece, stage.placeAt);
+            state.pieceIds.set(stage.placeAt, pieceId);
+            setPieceTrail(state, pieceId, [stage.placeAt]);
+            const dests = new Map([[stage.placeAt, getMoves(cg, state, stage.placeAt, false, false)]]);
+            cg.set({movable: {dests: dests}});
+            cg.selectSquare(stage.placeAt);
+            hidePlacement();
+            setStage(state, {
+                kind: 'MovePlacedPiece',
+                oldDests: oldDests,
+                placedAt: stage.placeAt
+            });
         }
     }
-    return availablePieces;
+
+    for (const color of ['white', 'black']) {
+        for (const role of makeStartingPieces().keys()) {
+            const piece = {role, color};
+            const pieceEl = document.createElement('piece');
+            pieceEl.classList.add(role, color);
+            const squareEl = document.createElement('square');
+            squareEl.insertBefore(pieceEl, null);
+            placementChoice.insertBefore(squareEl, null);
+            squareEl.addEventListener('click', makeListener(piece));
+        }
+    }
+    placementChoice.addEventListener('click', () => {
+        setStage(state, {kind: 'MoveOrPlace'});
+        hidePlacement();
+    });
 }
+
 
 type Trail = Key[];
 
