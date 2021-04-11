@@ -184,7 +184,7 @@ function growTrail(cg: Api, state: ChesstrailState, pieceId: PieceId, trail: Key
         const trail = candidateTrails[0];
         const dest = trail[trail.length - 1];
         placePieceCG(cg, intersectedPiece, dest);
-        state.pieceIds.set(dest, pieceId);
+        state.pieceIds.set(dest, intersectedPieceId);
         setPieceTrail(state, intersectedPieceId, trail);
         endMove();
     } else {
