@@ -19,9 +19,11 @@ TODO:
 6. Pawn promotion. DONE
 7. Remove just placed piece when clicked on it. DONE.
 8. Bug when cannot choose a piece when it is displayed on top of a piece on the board. DONE.
-9. Display counter of available pieces. TODO
+9. Display counter of available pieces. DONE.
 10. Do not let a piece that was just placed to cut the trails. DONE.
 11. After knight captures a piece an error happens. DONE.
+12. When intersecting another trail, state.lastMove gets set to one of its paths.
+Last move should be only for the piece that moved. TODO
 
  */
 
@@ -178,6 +180,9 @@ function growTrail(cg: Api, state: ChesstrailState, pieceId: PieceId, trail: Key
         candidateTrails = [before, after].filter(t => isValidSubTrail(t));
     }
 
+    if (intersectedPieceId != pieceId) {
+        setPieceTrail(state, pieceId, trail);
+    }
     if (candidateTrails.length == 0) {
         endMove();
     } else if (candidateTrails.length == 1) {
@@ -198,9 +203,6 @@ function growTrail(cg: Api, state: ChesstrailState, pieceId: PieceId, trail: Key
             piece: intersectedPiece,
             pieceId: intersectedPieceId
         })
-    }
-    if (intersectedPieceId != pieceId) {
-        setPieceTrail(state, pieceId, trail);
     }
 }
 
@@ -367,13 +369,6 @@ function placePieceCG(cg, piece: Piece, key: Key) {
     dropNewPiece(cg.state, 'a0', key, true);
     cg.state.turnColor = piece.color;
 }
-
-// function makeNewPiece(state, piece: Piece): PieceId {
-//     const playerPieces = state.availablePieces.get(piece.color) as Map<Role, Number>;
-//     const pieceCount = playerPieces.get(piece.role) as number;
-//     playerPieces.set(piece.role, pieceCount - 1);
-//     return state.pieceIdCounter++;
-// }
 
 function onSelect(cg, state: ChesstrailState, key: Key) {
     const color = cg.state.turnColor;

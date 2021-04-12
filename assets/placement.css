@@ -1,0 +1,80 @@
+#placement-choice {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+}
+
+#placement-choice {
+    background: rgba(237, 235, 233, 0.7);
+    z-index: 205;
+    display: none;
+}
+
+#placement-choice.active {
+    display: block;
+}
+
+#placement-choice square {
+    display: none;
+    cursor: pointer;
+    border-radius: 50%;
+    background-color: #b0b0b0;
+    box-shadow: inset 0 0 25px 3px #808080;
+    transition: all 150ms;
+}
+
+#placement-choice square {
+    /*Copies base*/
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 12.5%;
+    height: 12.5%;
+}
+
+#placement-choice square.active {
+    display: block;
+}
+
+#placement-choice piece {
+    pointer-events: auto;
+    opacity: 1;
+}
+
+#placement-choice piece {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 12.5%;
+    height: 12.5%;
+    background-size: cover;
+    z-index: 2;
+    will-change: transform;
+    pointer-events: none;
+}
+
+#placement-choice square::before {
+    content: attr(data-count);
+    font-size: 1.5em;
+}
+
+.is2d #placement-choice piece {
+    width: 100%;
+    height: 100%;
+    transition: all 150ms;
+    transform: scale(0.8);
+
+}
+
+#placement-choice square:not([data-count='0']):hover {
+    box-shadow: inset 0 0 48px 8px #d64f00;
+    border-radius: 0;
+}
+
+.is2d #placement-choice square:not([data-count='0']):hover piece {
+    transform: none;
+}
+
+#placement-choice square[data-count='0'] piece {
+    opacity: 0.5;
+}
