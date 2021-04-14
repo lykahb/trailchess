@@ -1,0 +1,28 @@
+.cg-trails {
+    overflow: hidden;
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    opacity: 0.6;
+}
+
+.cg-trails .trail {
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    fill: none;
+    opacity: 1;
+}
+.cg-trails .trail-black {
+    stroke: black;
+}
+
+.cg-trails .trail-white {
+    stroke: white;
+}
+
+.cg-trails .trail-choose {
+    stroke-dasharray: 0 4%;
+}

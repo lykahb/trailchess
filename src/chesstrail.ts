@@ -4,8 +4,9 @@ import {Api} from 'chessground/api';
 import {anim} from 'chessground/anim';
 import {key2pos, pos2key} from 'chessground/util';
 import {Key, Color, Role, Piece, Dests} from 'chessground/types';
-import {dropNewPiece} from 'chessground/board';
 import {premove} from 'chessground/premove';
+import * as cg from "chessground/types";
+import {createElement as createSVG, setAttributes} from 'chessground/svg';
 
 /*
 TODO:
@@ -23,8 +24,7 @@ TODO:
 10. Do not let a piece that was just placed to cut the trails. DONE.
 11. After knight captures a piece an error happens. DONE.
 12. When intersecting another trail, state.lastMove gets set to one of its paths.
-Last move should be only for the piece that moved. TODO
-
+13. Update trails svg when boundsUpdated. TODO:
  */
 
 export const defaults = {
@@ -47,6 +47,7 @@ export const defaults = {
         };
         const cg = Chessground(el, {
             fen: '8/8/8/8/8/8/8/8',
+            orientation: 'white',
             movable: {
                 showDests: true,
                 color: 'white',
@@ -54,13 +55,6 @@ export const defaults = {
             },
             premovable: {
                 enabled: false
-            },
-            drawable: {
-                brushes: {
-                    // @ts-ignore
-                    'white': {key: 'w', color: 'white', opacity: 1, lineWidth: 10},
-                    'black': {key: 'k', color: 'black', opacity: 1, lineWidth: 10}
-                }
             },
             draggable: {
                 showGhost: true
@@ -364,10 +358,8 @@ type ChesstrailStage = ChesstrailStageMoveOrPlace
 
 
 function placePieceCG(cg, piece: Piece, key: Key) {
-    cg.state.pieces.set('a0', piece);
-    // dropNewPiece changes color. Restore it.
-    dropNewPiece(cg.state, 'a0', key, true);
-    cg.state.turnColor = piece.color;
+    // Update the state directly. The function dropNewPiece changes color and movables.
+    cg.state.pieces.set(key, piece);
 }
 
 function onSelect(cg, state: ChesstrailState, key: Key) {
@@ -444,17 +436,32 @@ function drawState(cg, state: ChesstrailState) {
     console.log('pieceIds', JSON.stringify([...state.pieceIds]));
     console.log('trailMap', JSON.stringify([...state.trailMap]));
     console.log('trails', JSON.stringify([...state.trails]));
-    const shapes: DrawShape[] = drawTrails(cg, state.trails);
+    const container = cg.state.dom.elements.container;
+    let trailsSvg = container.querySelector('.cg-trails');
+    if (!trailsSvg) {
+        trailsSvg = setAttributes(createSVG('svg'), {'class': 'cg-trails'});
+        trailsSvg.appendChild(createSVG('g'));
+        container.appendChild(trailsSvg);
+    }
+
+    const trailsToDraw: {trail: Trail, classes: string}[] = [];
+    for (const trail of state.trails.values()) {
+        const position = trail[trail.length - 1];
+        const {color} = cg.state.pieces.get(position);
+        trailsToDraw.push({classes: `trail-${color}`, trail});
+    }
     if (stage.kind == 'Place') {
         // TODO: https://github.com/ornicar/lila/blob/master/ui/analyse/src/promotion.ts
         displayChoice(cg, stage.placeAt, stage.color, stage.availablePieces);
     } else if (stage.kind == 'ChooseTrail') {
         stage.trails.forEach(trail =>
-            shapes.push(...drawTrail('paleGreen', trail)));
+            trailsToDraw.push({classes: `trail-choose trail-${stage.piece.color}`, trail})
+        );
         if (stage.oldTrail) {
-            shapes.push(...drawTrail(stage.piece.color, stage.oldTrail));
+            trailsToDraw.push({classes: `trail-${stage.piece.color}`, trail: stage.oldTrail});
         }
     }
+    const shapes: DrawShape[] = [];
     if (stage.kind == 'ChooseTrail') {
         stage.trails.forEach(trail =>
             shapes.push({
@@ -462,27 +469,51 @@ function drawState(cg, state: ChesstrailState) {
                 piece: stage.piece
             }));
     }
-    // shapes.push({ orig: 'e2', dest: 'a8', brush: 'black'});
+    syncTrailsSvg(cg, trailsSvg.querySelector('g'), trailsToDraw);
     cg.setAutoShapes(shapes);
     validateState(cg, state);
 }
 
-function drawTrails(cg, trails: Map<PieceId, Trail>): DrawShape[] {
-    const shapes: DrawShape[] = [];
-    for (const trail of trails.values()) {
-        const position = trail[trail.length - 1];
-        const {color} = cg.state.pieces.get(position);
-        shapes.push(...drawTrail(color, trail));
+function drawTrail(cg, classes, trail: Trail): SVGElement {
+    function pos2px(pos: cg.Pos, bounds: ClientRect): cg.NumberPair {
+        return [((pos[0] + 0.5) * bounds.width) / 8, ((7.5 - pos[1]) * bounds.height) / 8];
     }
-    return shapes;
+
+    const bounds = cg.state.dom.bounds();
+    const lineWidth = (10 / 512) * bounds.width;
+
+    const points = trail.map(s => {
+        const [x, y] = pos2px(key2pos(s), bounds);
+        return x + ',' + y;
+    }).join(' ');
+    return setAttributes(createSVG('polyline'), {
+        class: "trail " + classes,
+        'stroke-width': lineWidth,
+        points: points
+    });
 }
 
-function drawTrail(brush: string, trail: Trail): DrawShape[] {
-    const shapes: DrawShape[] = [];
-    for (let i = 0; i < trail.length - 1; i++) {
-        shapes.push({orig: trail[i], dest: trail[i + 1], brush});
+function syncTrailsSvg(cg, root, trails: { trail: Trail, classes: string }[]) {
+    const hashTrail = (trail, classes) => classes + JSON.stringify(trail);
+    const trailsInDom = new Map(), // by hash
+        toRemove: SVGElement[] = [];
+    for (const {trail, classes} of trails) trailsInDom.set(hashTrail(trail, classes), false);
+    let el: SVGElement | undefined = root.firstChild as SVGElement,
+        trailKeys: string;
+    while (el) {
+        trailKeys = el.getAttribute('cgTrail') as string;
+        // found a shape element that's here to stay
+        if (trailsInDom.has(trailKeys)) trailsInDom.set(trailKeys, true);
+        // or remove it
+        else toRemove.push(el);
+        el = el.nextSibling as SVGElement | undefined;
     }
-    return shapes;
+    // remove old shapes
+    for (const el of toRemove) root.removeChild(el);
+    // insert shapes that are not yet in dom
+    for (const {trail, classes} of trails) {
+        if (!trailsInDom.get(hashTrail(trail, classes))) root.appendChild(drawTrail(cg, classes, trail));
+    }
 }
 
 function isValidFutureTrail(cg, state, piece, trail, allowIntersect, isMoved) {
