@@ -6,6 +6,7 @@ import {key2pos, pos2key} from 'chessground/util';
 import {Key, Color, Role, Piece, Dests} from 'chessground/types';
 import {premove} from 'chessground/premove';
 import * as cg from "chessground/types";
+import {dragNewPiece} from "chessground/drag";
 import {createElement as createSVG, setAttributes} from 'chessground/svg';
 
 /*
@@ -64,13 +65,55 @@ export const defaults = {
         cg.set({
             events: {
                 move: (orig, dest) => onMove(cg, chesstrailState, orig, dest),
-                select: key => onSelect(cg, chesstrailState, key)
+                select: key => onSelect(cg, chesstrailState, key),
+                dropNewPiece: (piece, key) => onDropNewPiece(cg, chesstrailState, piece, key)
             }
         });
         makePlacementListener(cg, chesstrailState);
         return cg;
     }
 };
+
+// https://github.com/ornicar/lila/blob/master/ui/round/src/crazy/crazyView.ts
+function onDropNewPiece(cg, state, piece: Piece, key: Key) {
+    const stage = state.stage;
+    if (stage.kind != 'MoveOrPlace') {
+        alert(`Unexpected stage ${stage.kind}`);
+    }
+    // After calling the drop listener, chessground sets the opposite color.
+    // We need preserve the turn color after dropping the piece.
+    cg.state.turnColor = piece.color;
+
+    if (state.trailMap.has(key)) {
+        cg.state.pieces.delete(key);
+        cg.state.dom.redraw();
+        return;
+    }
+
+    const playerPieces = state.availablePieces.get(piece.color) as Map<Role, Number>;
+    const newPieceCount = playerPieces.get(piece.role) as number - 1;
+    if (newPieceCount < 0) {
+        return;
+    }
+    playerPieces.set(piece.role, newPieceCount);
+    const pieceEl = document.querySelector(`.pocket .${piece.role}.${piece.color}`) as HTMLElement;
+    pieceEl.dataset.count = String(newPieceCount);
+
+    const pieceId = state.pieceIdCounter++;
+    const oldDests = cg.state.movable.dests;
+    placePieceCG(cg, piece, key);
+    state.pieceIds.set(key, pieceId);
+    setPieceTrail(state, pieceId, [key]);
+    const dests = new Map([[key, getMoves(cg, state, key, false, false)]]);
+    cg.set({movable: {dests: dests}});
+    setStage(state, {
+        kind: 'MovePlacedPiece',
+        oldDests: oldDests,
+        oldLastMove: stage.oldLastMove,
+        placedAt: key
+    });
+    cg.selectSquare(key);
+}
 
 function onMove(cg, state, orig, dest): void {
     const stage = state.stage;
@@ -96,7 +139,6 @@ function onMove(cg, state, orig, dest): void {
         } else if (trails.length == 1) {
             growTrail(cg, state, pieceId, trails[0], capturedPieceId != undefined);
         } else {
-            debugger;
             alert('A valid move has zero trails ' + stage.kind)
         }
     } else {
@@ -134,7 +176,7 @@ function growTrail(cg: Api, state: ChesstrailState, pieceId: PieceId, trail: Key
             anim(state => state.pieces.set(dest, {role: 'queen', color: piece.color, promoted: true}), cg.state);
         }
         playOtherSide(cg, state);
-        setStage(state, {kind: 'MoveOrPlace'});
+        setStage(state, {kind: 'MoveOrPlace', oldLastMove: cg.state.lastMove});
     }
 
     state.pieceIds.delete(trail[0]);
@@ -328,19 +370,16 @@ type PieceId = Number
 
 interface ChesstrailStageMoveOrPlace {
     kind: 'MoveOrPlace'
-}
-
-interface ChesstrailStagePlace {
-    kind: 'Place'
-    placeAt: Key
-    availablePieces: Map<Role, Number>
-    color: Color
+    // Holds the last move so that it can be restored after taking back a dropped piece
+    oldLastMove: Key[]
 }
 
 interface ChesstrailStageMovePlacedPiece {
     kind: 'MovePlacedPiece'
     placedAt: Key
+    // Holds the last move and destinations so that they can be restored after taking back a dropped piece
     oldDests: Dests
+    oldLastMove: Key[]
 }
 
 interface ChesstrailStageChooseTrail {
@@ -363,44 +402,28 @@ function placePieceCG(cg, piece: Piece, key: Key) {
 }
 
 function onSelect(cg, state: ChesstrailState, key: Key) {
-    const color = cg.state.turnColor;
     const stage = state.stage;
 
     if (cg.state.lastMove?.length == 2 && cg.state.lastMove[1] == key) {
-        if (stage.kind != 'Place' && stage.kind != 'ChooseTrail') {
+        if (stage.kind != 'ChooseTrail') {
             // If onSelect was invoked as a result of the move, let onMove handle the change.
             // We can only indirectly deduce it from the stage. Also, it can be a click selecting a piece.
             return;
         }
     }
-    if (stage.kind == 'MoveOrPlace') {
-        if (state.trailMap.has(key)) {
-            // Cannot place on a square that has a piece or trail of another piece.
-            // There are two clicks when moving: on the first one the square has a piece
-            // On the second one, this listener is called when the piece is already moved there.
-            return;
-        }
-
-        const availablePieces = state.availablePieces.get(color) as Map<Role, Number>;
-
-        setStage(state, {
-            kind: 'Place',
-            color,
-            availablePieces,
-            placeAt: key
-        });
-    } else if (stage.kind == 'Place') {
-        alert('Wrong place');
-    } else if (stage.kind == 'MovePlacedPiece') {
+    if (stage.kind == 'MovePlacedPiece') {
         if (key == stage.placedAt) {
             if (cg.state.draggable.current?.previouslySelected == stage.placedAt) {
                 const piece = cg.state.pieces.get(key);
                 deletePiece(cg, state, state.pieceIds.get(key) as number, true);
                 cg.set({movable: {dests: stage.oldDests}});
                 const playerPieces = state.availablePieces.get(piece.color) as Map<Role, Number>;
-                const pieceCount = playerPieces.get(piece.role) as number;
-                playerPieces.set(piece.role, pieceCount + 1);
-                setStage(state, {kind: 'MoveOrPlace'});
+                const newPieceCount = playerPieces.get(piece.role) as number + 1;
+                playerPieces.set(piece.role, newPieceCount);
+                const pieceEl = document.querySelector(`.pocket .${piece.role}.${piece.color}`) as HTMLElement;
+                pieceEl.dataset.count = String(newPieceCount);
+                cg.state.lastMove = stage.oldLastMove;
+                setStage(state, {kind: 'MoveOrPlace', oldLastMove: stage.oldLastMove});
             }
         } else {
             // Dests become undefined after move.
@@ -444,16 +467,13 @@ function drawState(cg, state: ChesstrailState) {
         container.appendChild(trailsSvg);
     }
 
-    const trailsToDraw: {trail: Trail, classes: string}[] = [];
+    const trailsToDraw: { trail: Trail, classes: string }[] = [];
     for (const trail of state.trails.values()) {
         const position = trail[trail.length - 1];
         const {color} = cg.state.pieces.get(position);
         trailsToDraw.push({classes: `trail-${color}`, trail});
     }
-    if (stage.kind == 'Place') {
-        // TODO: https://github.com/ornicar/lila/blob/master/ui/analyse/src/promotion.ts
-        displayChoice(cg, stage.placeAt, stage.color, stage.availablePieces);
-    } else if (stage.kind == 'ChooseTrail') {
+    if (stage.kind == 'ChooseTrail') {
         stage.trails.forEach(trail =>
             trailsToDraw.push({classes: `trail-choose trail-${stage.piece.color}`, trail})
         );
@@ -629,94 +649,55 @@ function getMoves(cg, state, key: Key, allowCapture, allowIntersect): Key[] {
         .filter(m => getTrailsForMove(piece.role, key, m).some(t => isValidFutureTrail(cg, state, piece, t, allowIntersect, false)));
 }
 
-function displayChoice(cg, placeAt: Key, color: Color, pieces: Map<Role, Number>): void {
-    const placementChoice = document.getElementById('placement-choice');
-    if (placementChoice == null) {
-        throw Error('Cannot find placement choice element');
-    }
-    let left = (7 - key2pos(placeAt)[0]) * 12.5;
-    const orientation: Color = cg.state.orientation;
-    if (orientation === 'white') left = 87.5 - left;
-    // const startingRank = Math.min(5, 8 - key2pos(placeAt)[1]); // We always display five pieces.
-    // const vertical = color === orientation ? 'top' : 'bottom';
-
-    placementChoice.classList.add('active');
-    placementChoice.classList.add(color);
-    let i = 0;
-    for (const [role, count] of pieces) {
-        // const top = (color === orientation ? i : 7 - i) * 12.5;
-        const top = i * 12.5;
-        i++;
-        const pieceEl = placementChoice.querySelector(`piece.${role}.${color}`) as Element;
-        const squareEl = pieceEl.parentNode as HTMLElement;
-        squareEl.dataset.count = count.toString();
-        squareEl.classList.add('active');
-        squareEl.style.top = `${top}%`;
-        squareEl.style.left = `${left}%`;
-    }
-}
-
 function makePlacementListener(cg, state) {
-    const placementChoice = document.getElementById('placement-choice');
+    const placementChoice = document.querySelector('.pocket-bottom');
     if (placementChoice == null) {
         throw Error('Cannot find placement choice element');
     }
 
-    function hidePlacement() {
-        if (placementChoice == null) {
-            throw Error('Cannot find placement choice element');
-        }
-        placementChoice.classList.remove('active');
-        placementChoice.querySelectorAll('square.active').forEach(square =>
-            square.classList.remove('active')
-        );
-    }
-
-    function makeListener(piece) {
-        return ev => {
-            ev.stopImmediatePropagation();
-            const stage = state.stage;
-            if (stage.kind != 'Place') {
-                alert('The stage should be Place');
-            }
-            const playerPieces = state.availablePieces.get(piece.color) as Map<Role, Number>;
-            const pieceCount = playerPieces.get(piece.role) as number;
-            if (pieceCount < 1) {
-                return;
-            }
-            playerPieces.set(piece.role, pieceCount - 1);
-            const pieceId = state.pieceIdCounter++;
-            const oldDests = cg.state.movable.dests;  // it needs to be saved before placing piece
-            placePieceCG(cg, piece, stage.placeAt);
-            state.pieceIds.set(stage.placeAt, pieceId);
-            setPieceTrail(state, pieceId, [stage.placeAt]);
-            const dests = new Map([[stage.placeAt, getMoves(cg, state, stage.placeAt, false, false)]]);
-            cg.set({movable: {dests: dests}});
-            cg.selectSquare(stage.placeAt);
-            hidePlacement();
-            setStage(state, {
-                kind: 'MovePlacedPiece',
-                oldDests: oldDests,
-                placedAt: stage.placeAt
-            });
+    function doit(rootEl, color) {
+        for (const [role, count] of state.availablePieces.get(color).entries()) {
+            const c1 = document.createElement('div');
+            rootEl.insertBefore(c1, null);
+            c1.classList.add('pocket-c1');
+            const c2 = document.createElement('div');
+            c1.insertBefore(c2, null);
+            c2.classList.add('pocket-c2');
+            const piece = document.createElement('piece');
+            c2.insertBefore(piece, null);
+            piece.classList.add(role, color);
+            piece.dataset.role = role;
+            piece.dataset.color = color;
+            piece.dataset.count = count;
         }
     }
 
-    for (const color of ['white', 'black']) {
-        for (const role of makeStartingPieces().keys()) {
-            const piece = {role, color};
-            const pieceEl = document.createElement('piece');
-            pieceEl.classList.add(role, color);
-            const squareEl = document.createElement('square');
-            squareEl.insertBefore(pieceEl, null);
-            placementChoice.insertBefore(squareEl, null);
-            squareEl.addEventListener('click', makeListener(piece));
-        }
+    doit(document.querySelector('.pocket-bottom'), 'white');
+    doit(document.querySelector('.pocket-top'), 'black');
+    for (const evType of ['mousedown', 'touchstart']) {
+        document.querySelectorAll('.pocket').forEach(el =>
+            el.addEventListener(evType, drag));
     }
-    placementChoice.addEventListener('click', () => {
-        setStage(state, {kind: 'MoveOrPlace'});
-        hidePlacement();
-    });
+
+    function drag(e: cg.MouchEvent): void {
+        if (e.button !== undefined && e.button !== 0) return; // only touch or left click
+        const el = e.target as HTMLElement,
+            role = el.getAttribute('data-role') as cg.Role,
+            color = el.getAttribute('data-color') as cg.Color,
+            count = el.getAttribute('data-count');
+        if (!role || !color || count === '0') return;
+        if (color !== state.color) return;
+        e.stopPropagation();
+        e.preventDefault();
+        dragNewPiece(cg.state, {color, role}, e);
+    }
+
+    // function preloadMouseIcons(data: RoundData) {
+    //     const colorKey = data.player.color[0];
+    //     for (const colorKey of 'bw') {
+    //         for (const pKey of 'PNBRQ') fetch(`ass/cburnett/${colorKey}${pKey}.svg`));
+    //     }
+    // }
 }
 
 

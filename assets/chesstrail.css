@@ -1,3 +1,33 @@
+html {
+    font-size:12px
+}
+@media (min-width: 320px) {
+    html {
+        font-size:calc( 12px + 2 * ((100vw - 320px) / 880))
+    }
+}
+@media (min-width: 1200px) {
+    html {
+        font-size:14px
+    }
+}
+main {
+    display: grid;
+    grid-template-areas: 'board pocket-top' 'board pocket-bottom';
+    grid-template-columns: min-content 1fr;
+}
+
+.board-container {
+    grid-area: board;
+}
+.pocket-top {
+    grid-area: pocket-top;
+}
+
+.pocket-bottom {
+    grid-area: pocket-bottom;
+}
+
 .cg-trails {
     overflow: hidden;
     position: absolute;

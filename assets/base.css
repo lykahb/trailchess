@@ -51,8 +51,7 @@ cg-board square.move-dest {
 cg-board square.last-move {
     will-change: transform;
 }
-
-.cg-wrap piece {
+piece {
     position: absolute;
     top: 0;
     left: 0;

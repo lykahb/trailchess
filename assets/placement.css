@@ -1,80 +1,53 @@
-#placement-choice {
-    position: absolute;
+.pocket {
     width: 100%;
-    height: 100%;
+    box-shadow: 0 3px 5px rgba(0,0,0,0.3) inset;
+    background: #888;
+    display: flex;
+    border-radius: 3px;
+    margin: auto;
 }
-
-#placement-choice {
-    background: rgba(237, 235, 233, 0.7);
-    z-index: 205;
-    display: none;
+.pocket-c1 {
+    flex: 0 0 20%;
+    max-width: 10vmin;
 }
-
-#placement-choice.active {
+.pocket-c2 {
+    position: relative;
     display: block;
+    height: 0;
+    padding-bottom: 100%;
+    width: 100%;
 }
 
-#placement-choice square {
-    display: none;
-    cursor: pointer;
-    border-radius: 50%;
-    background-color: #b0b0b0;
-    box-shadow: inset 0 0 25px 3px #808080;
+.pocket piece[data-count="0"] {
+    cursor: auto;
+    opacity: 0.1;
+}
+.pocket piece {
+    display: block;
+    width: 100% !important;
+    height: 100% !important;
     transition: all 150ms;
-}
-
-#placement-choice square {
-    /*Copies base*/
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 12.5%;
-    height: 12.5%;
-}
-
-#placement-choice square.active {
-    display: block;
-}
-
-#placement-choice piece {
-    pointer-events: auto;
-    opacity: 1;
-}
-
-#placement-choice piece {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 12.5%;
-    height: 12.5%;
-    background-size: cover;
     z-index: 2;
-    will-change: transform;
-    pointer-events: none;
+    pointer-events: auto;
 }
 
-#placement-choice square::before {
+.pocket piece::after {
     content: attr(data-count);
-    font-size: 1.5em;
+    bottom: 0;
+    right: 0;
+    position: absolute;
+    line-height: 0.9em;
+    padding: 3px 0.3em;
+    font-weight: bold;
+    font-size: 1.1em;
+    pointer-events: auto;
 }
-
-.is2d #placement-choice piece {
-    width: 100%;
-    height: 100%;
-    transition: all 150ms;
-    transform: scale(0.8);
-
+.pocket piece[data-count="0"]::after {
+    content: none;
 }
-
-#placement-choice square:not([data-count='0']):hover {
-    box-shadow: inset 0 0 48px 8px #d64f00;
-    border-radius: 0;
-}
-
-.is2d #placement-choice square:not([data-count='0']):hover piece {
-    transform: none;
-}
-
-#placement-choice square[data-count='0'] piece {
-    opacity: 0.5;
+.pocket piece::after {
+    background: #d64f00;
+    color: #fff;
+    text-shadow: 0 1px 1px black !important;
+    box-shadow: 0 3px 4px rgba(0,0,0,0.15) inset;
 }

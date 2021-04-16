@@ -11,18 +11,19 @@
         .cg-wrap, .board-container {
             width: 320px;
             height: 320px;
-            position: absolute;
-            display: block;
+            position: relative;
         }
     </style>
 </head>
 <body>
-<div class="board-container brown merida is2d">
-    <div class="cg-wrap" id="chesstrail">
+<main>
+    <div class="board-container brown merida is2d">
+        <div class="cg-wrap" id="chesstrail">
+        </div>
     </div>
-    <div id="placement-choice">
-    </div>
-</div>
+    <div class="pocket is2d pocket-bottom usable"></div>
+    <div class="pocket is2d pocket-top usable"></div>
+</main>
 <script src="dist/chesstrail.js"></script>
 <script>
     Chesstrail.run(document.getElementById('chesstrail'));
