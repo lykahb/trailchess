@@ -24,8 +24,9 @@ TODO:
 9. Display counter of available pieces. DONE.
 10. Do not let a piece that was just placed to cut the trails. DONE.
 11. After knight captures a piece an error happens. DONE.
-12. When intersecting another trail, state.lastMove gets set to one of its paths.
+12. When intersecting another trail, state.lastMove gets set to one of its paths. DONE.
 13. Update trails svg when boundsUpdated. TODO:
+14. Save dests for taking back piece. DONE.
  */
 
 export const defaults = {
@@ -43,7 +44,6 @@ export const defaults = {
                 ['white', makeStartingPieces()],
             ]),
             pieceIdCounter: 0,
-            duplicateOnCut: true,
             color: 'white'
         };
         const cg = Chessground(el, {
@@ -100,7 +100,6 @@ function onDropNewPiece(cg, state, piece: Piece, key: Key) {
     pieceEl.dataset.count = String(newPieceCount);
 
     const pieceId = state.pieceIdCounter++;
-    const oldDests = cg.state.movable.dests;
     placePieceCG(cg, piece, key);
     state.pieceIds.set(key, pieceId);
     setPieceTrail(state, pieceId, [key]);
@@ -108,7 +107,7 @@ function onDropNewPiece(cg, state, piece: Piece, key: Key) {
     cg.set({movable: {dests: dests}});
     setStage(state, {
         kind: 'MovePlacedPiece',
-        oldDests: oldDests,
+        oldDests: stage.oldDests,
         oldLastMove: stage.oldLastMove,
         placedAt: key
     });
@@ -176,7 +175,9 @@ function growTrail(cg: Api, state: ChesstrailState, pieceId: PieceId, trail: Key
             anim(state => state.pieces.set(dest, {role: 'queen', color: piece.color, promoted: true}), cg.state);
         }
         playOtherSide(cg, state);
-        setStage(state, {kind: 'MoveOrPlace', oldLastMove: cg.state.lastMove});
+        state.dests = cg.state.movable.dests;
+        state.lastMove = cg.state.lastMove;
+        setStage(state, {kind: 'MoveOrPlace'});
     }
 
     state.pieceIds.delete(trail[0]);
@@ -362,24 +363,21 @@ type ChesstrailState = {
     trailMap: Map<Key, PieceId>
     pieceIdCounter: number
     stage: ChesstrailStage
-    duplicateOnCut: boolean
     color: Color
+    // Holds the last move and destinations so that they can be restored after taking back a dropped piece
+    dests?: Dests
+    lastMove?: Key[]
 }
 
 type PieceId = Number
 
 interface ChesstrailStageMoveOrPlace {
     kind: 'MoveOrPlace'
-    // Holds the last move so that it can be restored after taking back a dropped piece
-    oldLastMove: Key[]
 }
 
 interface ChesstrailStageMovePlacedPiece {
     kind: 'MovePlacedPiece'
     placedAt: Key
-    // Holds the last move and destinations so that they can be restored after taking back a dropped piece
-    oldDests: Dests
-    oldLastMove: Key[]
 }
 
 interface ChesstrailStageChooseTrail {
@@ -391,7 +389,6 @@ interface ChesstrailStageChooseTrail {
 }
 
 type ChesstrailStage = ChesstrailStageMoveOrPlace
-    | ChesstrailStagePlace
     | ChesstrailStageMovePlacedPiece
     | ChesstrailStageChooseTrail
 
@@ -416,14 +413,14 @@ function onSelect(cg, state: ChesstrailState, key: Key) {
             if (cg.state.draggable.current?.previouslySelected == stage.placedAt) {
                 const piece = cg.state.pieces.get(key);
                 deletePiece(cg, state, state.pieceIds.get(key) as number, true);
-                cg.set({movable: {dests: stage.oldDests}});
+                cg.set({movable: {dests: state.dests}});
+                cg.state.lastMove = state.lastMove;
                 const playerPieces = state.availablePieces.get(piece.color) as Map<Role, Number>;
                 const newPieceCount = playerPieces.get(piece.role) as number + 1;
                 playerPieces.set(piece.role, newPieceCount);
                 const pieceEl = document.querySelector(`.pocket .${piece.role}.${piece.color}`) as HTMLElement;
                 pieceEl.dataset.count = String(newPieceCount);
-                cg.state.lastMove = stage.oldLastMove;
-                setStage(state, {kind: 'MoveOrPlace', oldLastMove: stage.oldLastMove});
+                setStage(state, {kind: 'MoveOrPlace'});
             }
         } else {
             // Dests become undefined after move.
