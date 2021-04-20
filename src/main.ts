@@ -1,5 +1,20 @@
 import {defaults} from "./chesstrail";
+import {aiPlay} from "./ai";
 
 export function run(element: Element) {
-    defaults.run(element);
+    const [cg, state] = defaults.run(element);
+    const selfPlayButton = document.querySelector('button.selfPlay');
+    if (selfPlayButton) {
+        selfPlayButton.addEventListener('click',
+            () => setInterval(() => aiPlay(cg, state), 300));
+    }
+    const aiPlayButton = document.querySelector('button.aiPlay');
+    if (aiPlayButton) {
+        aiPlayButton.addEventListener('click', () =>
+            element.addEventListener('chesstrailStage', () => setTimeout(() => {
+                if (state.color === 'black') {
+                    aiPlay(cg, state);
+                }
+            }, 300)));
+    }
 }

@@ -31,7 +31,7 @@ TODO:
 
 export const defaults = {
     name: 'Chesstrail',
-    run(el) {
+    run(el): [Api, ChesstrailState] {
         let chesstrailState: ChesstrailState = {
             stage: {
                 kind: 'MoveOrPlace'
@@ -39,7 +39,7 @@ export const defaults = {
             pieceIds: new Map<Key, PieceId>(),
             trailMap: new Map<Key, PieceId>(),
             trails: new Map<PieceId, Trail>(),
-            availablePieces: new Map([
+            pieceBank: new Map([
                 ['black', makeStartingPieces()],
                 ['white', makeStartingPieces()],
             ]),
@@ -66,11 +66,12 @@ export const defaults = {
             events: {
                 move: (orig, dest) => onMove(cg, chesstrailState, orig, dest),
                 select: key => onSelect(cg, chesstrailState, key),
-                dropNewPiece: (piece, key) => onDropNewPiece(cg, chesstrailState, piece, key)
+                dropNewPiece: (piece, key) => onDropNewPiece(cg, chesstrailState, piece, key),
+                change: () => onChange(cg, chesstrailState)
             }
         });
         makePlacementListener(cg, chesstrailState);
-        return cg;
+        return [cg, chesstrailState];
     }
 };
 
@@ -78,7 +79,7 @@ export const defaults = {
 function onDropNewPiece(cg, state, piece: Piece, key: Key) {
     const stage = state.stage;
     if (stage.kind != 'MoveOrPlace') {
-        alert(`Unexpected stage ${stage.kind}`);
+        throw Error(`Unexpected stage ${stage.kind}`);
     }
     // After calling the drop listener, chessground sets the opposite color.
     // We need preserve the turn color after dropping the piece.
@@ -90,7 +91,7 @@ function onDropNewPiece(cg, state, piece: Piece, key: Key) {
         return;
     }
 
-    const playerPieces = state.availablePieces.get(piece.color) as Map<Role, Number>;
+    const playerPieces = state.pieceBank.get(piece.color) as Map<Role, Number>;
     const newPieceCount = playerPieces.get(piece.role) as number - 1;
     if (newPieceCount < 0) {
         return;
@@ -105,13 +106,22 @@ function onDropNewPiece(cg, state, piece: Piece, key: Key) {
     setPieceTrail(state, pieceId, [key]);
     const dests = new Map([[key, getMoves(cg, state, key, false, false)]]);
     cg.set({movable: {dests: dests}});
-    setStage(state, {
+    setStage(cg, state, {
         kind: 'MovePlacedPiece',
-        oldDests: stage.oldDests,
-        oldLastMove: stage.oldLastMove,
+        piece: piece,
         placedAt: key
     });
     cg.selectSquare(key);
+}
+
+function onChange(cg, state: ChesstrailState) {
+    const stage = state.stage;
+    if (stage.kind == 'MovePlacedPiece') {
+        if (!cg.state.pieces.has(stage.placedAt)) {
+            // The newly placed piece was removed by dragging outside of the board
+            deleteNewlyPlacedPiece(cg, state, stage.placedAt);
+        }
+    }
 }
 
 function onMove(cg, state, orig, dest): void {
@@ -134,25 +144,25 @@ function onMove(cg, state, orig, dest): void {
             const oldTrail = state.trails.get(pieceId);
             deletePiece(cg, state, pieceId, false);
             cg.state.pieces.delete(dest);
-            setStage(state, {kind: 'ChooseTrail', trails, piece, pieceId, oldTrail});
+            setStage(cg, state, {kind: 'ChooseTrail', trails, piece, pieceId, oldTrail});
         } else if (trails.length == 1) {
             growTrail(cg, state, pieceId, trails[0], capturedPieceId != undefined);
         } else {
-            alert('A valid move has zero trails ' + stage.kind)
+            throw Error('A valid move has zero trails ' + stage.kind);
         }
     } else {
-        debugger;
-        alert('Moved during a wrong stage ' + stage.kind);
+        throw Error('Moved during a wrong stage ' + stage.kind);
     }
     drawState(cg, state);
 }
 
-function setStage(state, stage) {
+function setStage(cg, state, stage) {
     state.stage = stage;
-    console.log('set', stage.kind);
+    const container = cg.state.dom.elements.container;
+    container.dispatchEvent(new Event('chesstrailStage', {bubbles: true}));
 }
 
-function deletePiece(cg, state: ChesstrailState, pieceId: PieceId, deleteCg) {
+export function deletePiece(cg, state: ChesstrailState, pieceId: PieceId, deleteCg) {
     const trail = state.trails.get(pieceId) as Trail;
     const key = trail[trail.length - 1];
     for (const key of trail) {
@@ -177,7 +187,7 @@ function growTrail(cg: Api, state: ChesstrailState, pieceId: PieceId, trail: Key
         playOtherSide(cg, state);
         state.dests = cg.state.movable.dests;
         state.lastMove = cg.state.lastMove;
-        setStage(state, {kind: 'MoveOrPlace'});
+        setStage(cg, state, {kind: 'MoveOrPlace'});
     }
 
     state.pieceIds.delete(trail[0]);
@@ -234,7 +244,7 @@ function growTrail(cg: Api, state: ChesstrailState, pieceId: PieceId, trail: Key
         if (pieceId == intersectedPieceId) {
             cg.state.pieces.delete(dest);
         }
-        setStage(state, {
+        setStage(cg, state, {
             kind: 'ChooseTrail',
             trails: candidateTrails,
             piece: intersectedPiece,
@@ -301,7 +311,7 @@ function validateState(cg, state: ChesstrailState) {
         state.trailMap.size == [...state.trails.values()].reduce((acc, t) => acc + t.length, 0));
 }
 
-function setPieceTrail(state, pieceId, trail) {
+export function setPieceTrail(state, pieceId, trail: Trail) {
     for (const key of trail) {
         state.trailMap.set(key, pieceId)
     }
@@ -354,11 +364,11 @@ const makeStartingPieces = () => new Map<Role, Number>([
     ['pawn', 8]
 ]);
 
-type ChesstrailState = {
-    availablePieces: Map<Color, Map<Role, Number>>
+export type ChesstrailState = {
+    pieceBank: Map<Color, Map<Role, Number>>
     // This tracks trails of the pieces on board. It is in sync with the state.pieces
     pieceIds: Map<Key, PieceId>
-    // trails and trailMap describe the same structure. They must be in sync.
+    // trails and trailMap describe the same structure. This is an optimization for access by pieceId and key. They must be in sync.
     trails: Map<PieceId, Trail>
     trailMap: Map<Key, PieceId>
     pieceIdCounter: number
@@ -369,7 +379,7 @@ type ChesstrailState = {
     lastMove?: Key[]
 }
 
-type PieceId = Number
+export type PieceId = Number
 
 interface ChesstrailStageMoveOrPlace {
     kind: 'MoveOrPlace'
@@ -377,6 +387,7 @@ interface ChesstrailStageMoveOrPlace {
 
 interface ChesstrailStageMovePlacedPiece {
     kind: 'MovePlacedPiece'
+    piece: Piece
     placedAt: Key
 }
 
@@ -409,26 +420,12 @@ function onSelect(cg, state: ChesstrailState, key: Key) {
         }
     }
     if (stage.kind == 'MovePlacedPiece') {
-        if (key == stage.placedAt) {
-            if (cg.state.draggable.current?.previouslySelected == stage.placedAt) {
-                const piece = cg.state.pieces.get(key);
-                deletePiece(cg, state, state.pieceIds.get(key) as number, true);
-                cg.set({movable: {dests: state.dests}});
-                cg.state.lastMove = state.lastMove;
-                const playerPieces = state.availablePieces.get(piece.color) as Map<Role, Number>;
-                const newPieceCount = playerPieces.get(piece.role) as number + 1;
-                playerPieces.set(piece.role, newPieceCount);
-                const pieceEl = document.querySelector(`.pocket .${piece.role}.${piece.color}`) as HTMLElement;
-                pieceEl.dataset.count = String(newPieceCount);
-                setStage(state, {kind: 'MoveOrPlace'});
-            }
+        if (cg.state.selected !== stage.placedAt) {
+            cg.selectSquare(stage.placedAt);
         } else {
-            // Dests become undefined after move.
-            const isMovingPlacedPiece = cg.state.movable.dests && cg.state.movable.dests.get(stage.placedAt).includes(key);
-            if (!isMovingPlacedPiece) {
-                cg.selectSquare(stage.placedAt);
-            }
+            cg.state.draggable.deleteOnDropOff = true;
         }
+        return;
     } else if (stage.kind == 'ChooseTrail') {
         const trailsWithKey = stage.trails
             .map(t => t.includes(key));
@@ -533,6 +530,26 @@ function syncTrailsSvg(cg, root, trails: { trail: Trail, classes: string }[]) {
     }
 }
 
+function deleteNewlyPlacedPiece(cg, state: ChesstrailState, key) {
+    const stage = state.stage;
+    if (stage.kind !== 'MovePlacedPiece') {
+        throw 'Expected MovePlacePiece stage';
+    }
+    const piece = stage.piece;
+    deletePiece(cg, state, state.pieceIds.get(key) as number, true);
+    cg.state.movable.dests = state.dests;
+    cg.state.lastMove = state.lastMove;
+    cg.state.selected = undefined;
+
+    const playerPieces = state.pieceBank.get(piece.color) as Map<Role, Number>;
+    const newPieceCount = playerPieces.get(piece.role) as number + 1;
+    playerPieces.set(piece.role, newPieceCount);
+    const pieceEl = document.querySelector(`.pocket .${piece.role}.${piece.color}`) as HTMLElement;
+    pieceEl.dataset.count = String(newPieceCount);
+    cg.state.dom.redraw();
+    setStage(cg, state, {kind: 'MoveOrPlace'});
+}
+
 function isValidFutureTrail(cg, state, piece, trail, allowIntersect, isMoved) {
     // Trail is valid if:
     // If a piece is captured, its trail is ignored in the rules below.
@@ -605,7 +622,7 @@ function isPawnPromoted(cg, trail) {
     }
 }
 
-function getMoves(cg, state, key: Key, allowCapture, allowIntersect): Key[] {
+export function getMoves(cg, state, key: Key, allowCapture, allowIntersect): Key[] {
     const selfPieceId = state.pieceIds.get(key);
     const piece = cg.state.pieces.get(key);
     let moves: Key[];
@@ -653,7 +670,7 @@ function makePlacementListener(cg, state) {
     }
 
     function doit(rootEl, color) {
-        for (const [role, count] of state.availablePieces.get(color).entries()) {
+        for (const [role, count] of state.pieceBank.get(color).entries()) {
             const c1 = document.createElement('div');
             rootEl.insertBefore(c1, null);
             c1.classList.add('pocket-c1');
@@ -712,7 +729,7 @@ function playOtherSide(cg: Api, state: ChesstrailState) {
     });
 }
 
-function getAllMoves(cg, state: ChesstrailState): Map<Key, Key[]> {
+export function getAllMoves(cg, state: ChesstrailState): Map<Key, Key[]> {
     const dests = new Map();
     for (const s of cg.state.pieces.keys()) {
         const moves = getMoves(cg, state, s, true, true);
