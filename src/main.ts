@@ -6,7 +6,10 @@ export function run(element: Element) {
     const selfPlayButton = document.querySelector('button.selfPlay');
     if (selfPlayButton) {
         selfPlayButton.addEventListener('click',
-            () => setInterval(() => aiPlay(cg, state), 300));
+            () => {
+                aiPlay(cg, state);
+                setInterval(() => aiPlay(cg, state), 1500);
+            });
     }
     const aiPlayButton = document.querySelector('button.aiPlay');
     if (aiPlayButton) {
@@ -15,6 +18,6 @@ export function run(element: Element) {
                 if (state.color === 'black') {
                     aiPlay(cg, state);
                 }
-            }, 300)));
+            }, 500)));
     }
 }
