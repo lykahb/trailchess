@@ -1,7 +1,7 @@
 import {dropNewPiece} from "chessground/board";
 import {Color, Key, Piece, Role} from "chessground/types";
 import {opposite} from 'chessground/util';
-import {ChesstrailState, deletePiece, getMoves, setPieceTrail, Move, Trail, validateState} from "./chesstrail"
+import {ChesstrailState, getMoves, setPieceTrail, Move, Trail, validateState} from "./chesstrail"
 
 function roleValue(role: Role): number {
     return {
@@ -13,15 +13,18 @@ function roleValue(role: Role): number {
     } [role];
 }
 
-function computeMoveWeight(state: ChesstrailState, piece: Piece, move: Move, opponentAttacks: Set<Key>, isPlaced: boolean): number {
+function pickRandom<T>(list: T[]): T {
+    return list[Math.floor(Math.random() * list.length)];
+}
+
+function computeMoveWeight(color: Color, opponentAttacks: Set<Key>, isPlaced: boolean, oldTrail: Trail, move: Move): number {
     let weight = 0;
+    const piece = move.piece;
     const orig = move.trail[0];
     const dest = move.trail[move.trail.length - 1];
-    if (move.capturedPieceId !== undefined) {
-        const capturedPiece = state.cg.state.pieces.get(move.trail[move.trail.length - 1]) as Piece;
-        weight += roleValue(capturedPiece.role) * 11;
+    if (move.captures) {
+        weight += roleValue(move.captures.piece.role) * 11;
     }
-    weight += move.trail.length;
 
     const [origAttacked, destAttacked] = [opponentAttacks.has(orig), opponentAttacks.has(dest)];
     if ((isPlaced || !origAttacked) && destAttacked) {
@@ -30,8 +33,18 @@ function computeMoveWeight(state: ChesstrailState, piece: Piece, move: Move, opp
         weight += roleValue(piece.role) * 10;
     }
 
+    if (!destAttacked) {
+        if (piece.role == 'pawn') {
+            // Pawn move should have more weight as it approaches the edge.
+            // The past trail length approximates it.
+            weight += oldTrail.length + move.trail.length;
+        } else {
+            weight += move.trail.length / 2;
+        }
+    }
+
     if (move.cuts) {
-        const weightSign = move.cuts.piece.color === state.color ? -1 : 1;
+        const weightSign = move.cuts.piece.color === color ? -1 : 1;
         if (move.cuts.isErased) {
             weight += weightSign * 10 * roleValue(move.cuts.piece.role);
         } else {
@@ -55,15 +68,16 @@ function getAttackedSquares(state: ChesstrailState, attackerColor: Color): Set<K
     return attackedSquares;
 }
 
-function getWeightedMoves(state: ChesstrailState): Weighted<{move: Move}>[] {
+function getWeightedMoves(state: ChesstrailState): Weighted<{ move: Move }>[] {
     if (!state.movesMap) return [];
     const opponentAttacks = getAttackedSquares(state, opposite(state.color));
     const weightedMoves: { move: Move, weight: number }[] = [];
-    for (const [s, moves] of state.movesMap) {
-        const piece = state.cg.state.pieces.get(s) as Piece;
+    for (const moves of state.movesMap.values()) {
+        const {pieceId, piece} = moves[0];
+        const trail = state.trails.get(pieceId)!;
         if (piece.color !== state.color) continue;
         for (const move of moves) {
-            const weight = computeMoveWeight(state, piece, move, opponentAttacks, false);
+            const weight = computeMoveWeight(state.color, opponentAttacks, false, trail, move);
             weightedMoves.push({move, weight});
         }
     }
@@ -71,6 +85,7 @@ function getWeightedMoves(state: ChesstrailState): Weighted<{move: Move}>[] {
 }
 
 type Weighted<T> = { weight: number } & T;
+
 function sortWeights<T>(arr: Weighted<T>[]): Weighted<T>[] {
     return arr.sort((a, b) => b.weight - a.weight);
 }
@@ -94,19 +109,20 @@ function bestTrailChoice(state: ChesstrailState): Trail {
             weight += roleValue(stage.piece.role) * 10;
         }
 
-        // What can we do after this
         const tempPieceId = -1;
-        state.pieceIds.set(dest, tempPieceId);
-        state.cg.state.pieces.set(dest, stage.piece);
-        setPieceTrail(state, tempPieceId, trail);
-        const moves = getMoves(state, dest, true, true);
+        const moves = withTempState(state, state => {
+            state.cg.state.pieces.set(dest, stage.piece);
+            state.pieceIds.set(dest, tempPieceId);
+            setPieceTrail(state, tempPieceId, trail);
+            return getMoves(state, dest, true, true);
+        });
+
         if (moves.length) {
             let futureMoveWeight = moves
-                .map(move => computeMoveWeight(state, stage.piece, move, isPlayerPiece ? opponentAttacks : playerAttacks, false))
+                .map(move => computeMoveWeight(state.color, isPlayerPiece ? opponentAttacks : playerAttacks, false, trail, move))
                 .reduce((weight1, weight2) => Math.max(weight1, weight2)) / 2;
             weight += isPlayerPiece ? futureMoveWeight : -futureMoveWeight;
         }
-        deletePiece(state, tempPieceId, true);
         weightedTrails.push({trail, weight});
     }
     return sortWeights(weightedTrails)[0].trail;
@@ -129,6 +145,7 @@ function randomWeighted<T>(arr: Weighted<T>[], top: number): T {
         .reduce((s, a) => s + weightFunc(a.weight), 0);
     const rand = Math.random() * weightsSquared;
     let counter = 0;
+    console.log(JSON.stringify(picks));
     for (const a of picks) {
         counter += weightFunc(a.weight);
         if (rand <= counter) return a;
@@ -136,7 +153,21 @@ function randomWeighted<T>(arr: Weighted<T>[], top: number): T {
     throw new Error("randomWeighted");
 }
 
-function getWeightedPlacement(state: ChesstrailState): { placeAt: Key, piece: Piece, weight: number }[] {
+function withTempState<T>(state: ChesstrailState, func: (ChesstrailState) => T): T {
+    const tempState = {
+        ...state,
+        pieceIds: new Map(state.pieceIds),
+        trailMap: new Map(state.trailMap),
+        trails: new Map(state.trails)
+    };
+    const piecesBackup = state.cg.state.pieces;
+    state.cg.state.pieces = new Map(state.cg.state.pieces);
+    const result = func(tempState);
+    state.cg.state.pieces = piecesBackup;
+    return result;
+}
+
+function getWeightedPlacement(state: ChesstrailState): Weighted<{ placeAt: Key, piece: Piece }>[] {
     const pieceBank = state.pieceBank.get(state.color) as Map<Role, number>;
 
     function shuffleArray(array) {
@@ -168,24 +199,31 @@ function getWeightedPlacement(state: ChesstrailState): { placeAt: Key, piece: Pi
     let attempts = 50;
 
     const opponentAttacks = getAttackedSquares(state, opposite(state.color));
+
     for (const key of freeSquares) {
         if (attempts-- == 0) break;
-        if (!availableRoles.includes('knight')) return [];
-        const role:Role = 'knight';//pickRandom(availableRoles);
+        const role: Role = pickRandom(availableRoles);
         const piece = {role, color: state.color};
 
-        state.pieceIds.set(key, tempPieceId);
-        state.cg.state.pieces.set(key, piece);
-        setPieceTrail(state, tempPieceId, [key]);
-        const moves = getMoves(state, key, false, false);
-        deletePiece(state, tempPieceId, true);
+        const moves: Weighted<{move: Move}>[] = withTempState(state, state => {
+            state.cg.state.pieces.set(key, piece);
+            state.pieceIds.set(key, tempPieceId);
+            const oldTrail = [key];
+            setPieceTrail(state, tempPieceId, oldTrail);
+            return getMoves(state, key, false, false)
+                .map(move => ({
+                    move,
+                    weight: computeMoveWeight(state.color, opponentAttacks, true, oldTrail, move)
+                }));
+        });
+
         if (moves.length) {
-            let weight = moves.map(move => computeMoveWeight(state, piece, move, opponentAttacks, true))
-                .reduce((weight1, weight2) => Math.max(weight1, weight2));
+            let weight = 5 + moves.map(move => move.weight)
+                .reduce((weight1, weight2) => Math.max(weight1, weight2), 0);
             const inBankCount = [...pieceBank.values()].reduce((a, b) => a + b, 0);
             const onBoardCount = [...state.cg.state.pieces.values()]
                 .filter(p => p.color == state.color).length;
-            const piecesMultiplier = 1 + 1.2 * inBankCount / (onBoardCount + inBankCount);  // 1-2;
+            const piecesMultiplier = 1 + 1.2 * inBankCount / (onBoardCount + inBankCount);
             weight *= freeSquares.length / 64 * piecesMultiplier;
             weightedPlacements.push({placeAt: key, piece, weight});
         }
@@ -220,11 +258,7 @@ export function aiPlay(state: ChesstrailState) {
         validateState(state);
         makeMove(state, choice.move);
     } else if (stage.kind == 'ChooseTrail') {
-        validateState(state);
-
         const trail = bestTrailChoice(state);
-
-        validateState(state);
         // The trail always minimal length 2.
         // The first square may be shared by knight trails.
         state.cg.selectSquare(trail[1]);

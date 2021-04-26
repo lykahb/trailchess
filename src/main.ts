@@ -8,7 +8,7 @@ export function run(element: Element) {
         selfPlayButton.addEventListener('click',
             () => {
                 aiPlay(state);
-                setInterval(() => aiPlay(state), 500);
+                setInterval(() => aiPlay(state), 200);
             });
     }
     const aiPlayButton = document.querySelector('button.aiPlay');

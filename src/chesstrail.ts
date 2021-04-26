@@ -1,7 +1,6 @@
 import {Chessground} from 'chessground';
 import {DrawShape} from 'chessground/draw';
 import {Api} from 'chessground/api';
-import {anim} from 'chessground/anim';
 import {key2pos, opposite, pos2key} from 'chessground/util';
 import {Key, Color, Role, Piece} from 'chessground/types';
 import {premove} from 'chessground/premove';
@@ -27,6 +26,7 @@ TODO:
 12. When cutting another trail, state.lastMove gets set to one of its paths. DONE.
 13. Update trails svg when boundsUpdated. TODO:
 14. Save dests for taking back piece. DONE.
+15: Pawn promotion should only happen when reaching the furthest edge. TODO:
  */
 
 export function runChesstrail(el): ChesstrailState {
@@ -43,6 +43,9 @@ export function runChesstrail(el): ChesstrailState {
         },
         draggable: {
             showGhost: true
+        },
+        animation: {
+            enabled: true
         }
     });
     let state: ChesstrailState = {
@@ -184,7 +187,7 @@ function growTrail(state: ChesstrailState, pieceId: PieceId, trail: Key[], captu
 
     const endMove = () => {
         if (isPawnPromoted(state.cg, trail)) {
-            anim(state => state.pieces.set(dest, {role: 'queen', color: piece.color, promoted: true}), state.cg.state);
+            state.cg.state.pieces.set(dest, {role: 'queen', color: piece.color, promoted: true});
         }
         playOtherSide(state);
         setStage(state, {kind: 'MoveOrPlace'});
@@ -568,7 +571,9 @@ function deleteNewlyPlacedPiece(state: ChesstrailState, key) {
 }
 
 export interface Move {
-    capturedPieceId?: PieceId
+    piece: Piece
+    pieceId: PieceId
+    captures?: {pieceId: PieceId, piece: Piece}
     cuts?: { pieceId: PieceId, piece: Piece, isErased: boolean }
     trail: Trail
 }
@@ -587,14 +592,15 @@ function analyzeFutureTrail(state: ChesstrailState, piece: Piece, trail: Trail, 
     }
 
     const dest = last(trail);
-    const selfPieceId = state.pieceIds.get(trail[0]);
-    let cutPieceId: PieceId | null = null;
-    let cutSquare: Key | null = null;
+    const pieceId = state.pieceIds.get(trail[0])!;
+    let cutPieceId: PieceId | undefined = undefined;
+    let cutSquare: Key | undefined = undefined;
     const capturedPieceId = state.pieceIds.get(dest);
+    const capturedPiece = state.cg.state.pieces.get(dest);
 
     for (const s of trail.slice(1)) {
-        const pieceId = state.trailMap.get(s);
-        if (pieceId == undefined) {
+        const pieceIdOnTrail = state.trailMap.get(s);
+        if (pieceIdOnTrail == undefined) {
             continue;
         } else if (!allowCut) {
             return null;
@@ -612,32 +618,31 @@ function analyzeFutureTrail(state: ChesstrailState, piece: Piece, trail: Trail, 
             }
         }
 
-        if (pieceId == capturedPieceId) {
-        } else if (cutPieceId == null) {
-            cutPieceId = pieceId;
+        if (pieceIdOnTrail == capturedPieceId) {
+        } else if (cutPieceId == undefined) {
+            cutPieceId = pieceIdOnTrail;
             cutSquare = s;
-        } else if (pieceId != cutPieceId) {
+        } else if (pieceIdOnTrail != cutPieceId) {
             return null;  // Cutting trails of two pieces
-        } else if (pieceId != selfPieceId) {
+        } else if (pieceIdOnTrail != pieceId) {
             return null;  // Going through many squares of a trail instead of cutting it
         }
     }
 
-    let cuts;
-    if (cutPieceId != null) {
+    let cuts: {pieceId: PieceId, piece: Piece, isErased: boolean} | undefined = undefined;
+    if (cutPieceId != undefined) {
         let isErased = false;
         const cutTrail = state.trails.get(cutPieceId) as Trail;
         const piece = state.cg.state.pieces.get(last(cutTrail)) as Piece;
-        if (cutPieceId != selfPieceId) {
+        if (cutPieceId != pieceId) {
             const before = cutTrail.slice(0, cutTrail.indexOf(cutSquare as Key));
             const after = cutTrail.slice(cutTrail.indexOf(cutSquare as Key) + 1);
             isErased = !isValidSubTrail(before) && !isValidSubTrail(after);
         }
         cuts = {pieceId: cutPieceId, piece, isErased};
-    } else {
-        cuts = null;
     }
-    return {capturedPieceId, cuts, trail};
+    const captures = capturedPieceId !== undefined ? {pieceId: capturedPieceId, piece: capturedPiece!} : undefined;
+    return {piece, pieceId, captures, cuts, trail};
 }
 
 function isValidSubTrail(trail) {
