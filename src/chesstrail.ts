@@ -186,7 +186,8 @@ function growTrail(state: ChesstrailState, pieceId: PieceId, trail: Key[], captu
     const piece = state.cg.state.pieces.get(dest) as Piece;
 
     const endMove = () => {
-        if (isPawnPromoted(state.cg, trail)) {
+        if (piece.role == 'pawn'
+            && isPawnPromoted(state.trails.get(pieceId)![0], dest)) {
             state.cg.state.pieces.set(dest, {role: 'queen', color: piece.color, promoted: true});
         }
         playOtherSide(state);
@@ -209,7 +210,6 @@ function growTrail(state: ChesstrailState, pieceId: PieceId, trail: Key[], captu
     const cutPiece = state.cg.state.pieces.get(
         cutPieceId == pieceId ? dest : last(cutTrail)
     ) as Piece;
-
 
     let candidateTrails: Trail[];
     deletePiece(state, cutPieceId, true);
@@ -650,14 +650,10 @@ function isValidSubTrail(trail) {
     return trail.length > 1;
 }
 
-function isPawnPromoted(cg: Api, trail: Trail) {
-    const dest = last(trail);
-    if (cg.state.pieces.get(dest)?.role != 'pawn') {
-        return false;
-    }
-    const [[x1, y1], [x2, y2]] = [trail[0], dest].map(key2pos);
+function isPawnPromoted(trailStart: Key, dest: Key) {
+    const [[x1, y1], [x2, y2]] = [trailStart, dest].map(key2pos);
     const [xDelta, yDelta] = [x2 - x1, y2 - y1];
-    const getEdgeIndex = delta => delta == 0 ? -1 : (delta < 0 ? 0 : 7);
+    const getEdgeIndex = delta => delta == 0 ? null : (delta < 0 ? 0 : 7);
     const [xEdge, yEdge] = [getEdgeIndex(xDelta), getEdgeIndex(yDelta)];
     if (Math.abs(xDelta) == Math.abs(yDelta)) {
         return x2 == xEdge || y2 == yEdge;
