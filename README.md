@@ -1,3 +1,3 @@
 ### Trail Chess
 
-[PLAY](https://lykahb.github.io/trailchess)
+[PLAY](https://www.lykahb.com/trailchess/)
