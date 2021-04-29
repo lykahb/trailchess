@@ -1,12 +1,12 @@
-import {ChesstrailState, runChesstrail} from "./chesstrail";
+import {TrailChessState, runTrailChess} from "./trailchess";
 import {aiPlay} from "./ai";
 import * as cg from "chessground/types";
 import {dragNewPiece} from "chessground/drag";
 
 export function run(element: Element) {
-    let state = runChesstrail(element);
+    let state = runTrailChess(element);
 
-    element.addEventListener('chesstrailStage', () => onStateUpdate(state));
+    element.addEventListener('trailchessStage', () => onStateUpdate(state));
     document.querySelector('.controls')!
         .addEventListener('change', () => onStateUpdate(state));
     document.querySelector('.controls')!
@@ -22,7 +22,7 @@ export function run(element: Element) {
     document.querySelector('button.reset')!
         .addEventListener('click', () => {
             state.cg.destroy();
-            state = runChesstrail(element);
+            state = runTrailChess(element);
             onStateUpdate(state);
         });
 
@@ -45,7 +45,7 @@ export function run(element: Element) {
     onStateUpdate(state);
 }
 
-function onStateUpdate(state: ChesstrailState) {
+function onStateUpdate(state: TrailChessState) {
     const inputName = state.color === 'white' ? 'whitePlayer' : 'blackPlayer';
     const input = document.forms['controls']!.elements[inputName];
 

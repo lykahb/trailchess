@@ -12,14 +12,14 @@ const destination = () => gulp.dest('./dist');
 
 const browserifyOpts = (debug) => ({
   entries: ['src/main.ts'],
-  standalone: 'Chesstrail',
+  standalone: 'TrailChess',
   debug: debug
 });
 
 const prod = () => browserify(browserifyOpts(false))
   .plugin(tsify)
   .bundle()
-  .pipe(source('chesstrail.min.js'))
+  .pipe(source('trailchess.min.js'))
   .pipe(buffer())
   .pipe(terser({safari10: true}))
   .pipe(destination());
@@ -27,7 +27,7 @@ const prod = () => browserify(browserifyOpts(false))
 const dev = () => browserify(browserifyOpts(true))
   .plugin(tsify)
   .bundle()
-  .pipe(source('chesstrail.js'))
+  .pipe(source('trailchess.js'))
   .pipe(destination());
 
 const watch = () => {
@@ -35,7 +35,7 @@ const watch = () => {
   const bundle = () => bundler
     .bundle()
     .on('error', error => logger.error(colors.red(error.message)))
-    .pipe(source('chesstrail.js'))
+    .pipe(source('trailchess.js'))
     .pipe(destination());
 
   const bundler = watchify(

@@ -1,7 +1,7 @@
 import {dropNewPiece} from "chessground/board";
 import {Color, Key, Piece, Role} from "chessground/types";
 import {opposite} from 'chessground/util';
-import {ChesstrailState, getMoves, setPieceTrail, Move, Trail, validateState} from "./chesstrail"
+import {TrailChessState, getMoves, setPieceTrail, Move, Trail, validateState} from "./trailchess"
 
 function roleValue(role: Role): number {
     return {
@@ -63,7 +63,7 @@ function computeMoveWeight(color: Color, opponentAttacks: Set<Key>, isPlaced: bo
     return weight;
 }
 
-function getAttackedSquares(state: ChesstrailState, attackerColor: Color): Set<Key> {
+function getAttackedSquares(state: TrailChessState, attackerColor: Color): Set<Key> {
     const attackedSquares: Set<Key> = new Set();
     const mapAfterMove = state.stage.kind == 'MovePlacedPiece' ? state.stage.movesMapBackup : state.movesMap;
     if (!mapAfterMove) return attackedSquares;
@@ -77,7 +77,7 @@ function getAttackedSquares(state: ChesstrailState, attackerColor: Color): Set<K
     return attackedSquares;
 }
 
-function getWeightedMoves(state: ChesstrailState, random: boolean): Weighted<{ move: Move }>[] {
+function getWeightedMoves(state: TrailChessState, random: boolean): Weighted<{ move: Move }>[] {
     if (!state.movesMap || state.movesMap.size == 0) return [];
     if (random) {
         const moves = pickRandom([...state.movesMap.values()]);
@@ -105,7 +105,7 @@ function sortWeights<T>(arr: Weighted<T>[]): Weighted<T>[] {
     return arr.sort((a, b) => b.weight - a.weight);
 }
 
-function bestTrailChoice(state: ChesstrailState): Trail {
+function bestTrailChoice(state: TrailChessState): Trail {
     const stage = state.stage;
     if (stage.kind !== 'ChooseTrail') throw new Error('ChooseTrail');
     const playerAttacks = getAttackedSquares(state, state.color);
@@ -143,7 +143,7 @@ function bestTrailChoice(state: ChesstrailState): Trail {
     return sortWeights(weightedTrails)[0].trail;
 }
 
-function makeMove(state: ChesstrailState, move: Move) {
+function makeMove(state: TrailChessState, move: Move) {
     state.cg.move(move.trail[0], move.trail[move.trail.length - 1]);
 }
 
@@ -168,7 +168,7 @@ function randomWeighted<T>(arr: Weighted<T>[], top: number): T {
     throw new Error("randomWeighted");
 }
 
-function withTempState<T>(state: ChesstrailState, func: (ChesstrailState) => T): T {
+function withTempState<T>(state: TrailChessState, func: (TrailChessState) => T): T {
     const tempState = {
         ...state,
         pieceIds: new Map(state.pieceIds),
@@ -182,7 +182,7 @@ function withTempState<T>(state: ChesstrailState, func: (ChesstrailState) => T):
     return result;
 }
 
-function getWeightedPlacement(state: ChesstrailState, random: boolean): Weighted<{ placeAt: Key, piece: Piece }>[] {
+function getWeightedPlacement(state: TrailChessState, random: boolean): Weighted<{ placeAt: Key, piece: Piece }>[] {
     const pieceBank = state.pieceBank.get(state.color) as Map<Role, number>;
 
     const freeSquares: Key[] = [];
@@ -240,7 +240,7 @@ function getWeightedPlacement(state: ChesstrailState, random: boolean): Weighted
     return weightedPlacements;
 }
 
-export function aiPlay(state: ChesstrailState, random: boolean) {
+export function aiPlay(state: TrailChessState, random: boolean) {
     const stage = state.stage;
     validateState(state);
     if (stage.kind == 'MoveOrPlace') {
