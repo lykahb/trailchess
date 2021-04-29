@@ -1,34 +1,29 @@
 .pocket {
-    width: 100%;
     box-shadow: 0 3px 5px rgba(0,0,0,0.3) inset;
     background: #888;
     display: flex;
     border-radius: 3px;
-    margin: auto;
 }
-.pocket-c1 {
-    flex: 0 0 20%;
-    max-width: 10vmin;
+
+.pocket > piece:hover {
+    border-radius: 3px 0 0 3px;
+    background-color: #aaa;
 }
-.pocket-c2 {
-    position: relative;
-    display: block;
-    height: 0;
-    padding-bottom: 100%;
-    width: 100%;
-}
+
 
 .pocket piece[data-count="0"] {
     cursor: auto;
     opacity: 0.1;
 }
+
 .pocket piece {
     display: block;
-    width: 100% !important;
-    height: 100% !important;
+    width: calc(var(--board-size) / 8);
+    height: calc(var(--board-size) / 8);
     transition: all 150ms;
     z-index: 2;
     pointer-events: auto;
+    position: static;
 }
 
 .pocket piece::after {
@@ -36,8 +31,8 @@
     bottom: 0;
     right: 0;
     position: absolute;
-    line-height: 0.9em;
-    padding: 3px 0.3em;
+    line-height: 0.8em;
+    padding: 3px 0.25em;
     font-weight: bold;
     font-size: 1.1em;
     pointer-events: auto;

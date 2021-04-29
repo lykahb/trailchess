@@ -7,26 +7,116 @@
     <link rel="stylesheet" href="assets/brown.css">
     <link rel="stylesheet" href="assets/cburnett.css">
     <link rel="stylesheet" href="assets/chesstrail.css">
-
-    <style>
-        .cg-wrap, .board-container {
-            width: 320px;
-            height: 320px;
-            position: relative;
-        }
-    </style>
 </head>
 <body>
 <main>
-    <div class="board-container brown merida is2d">
-        <div class="cg-wrap" id="chesstrail">
+    <div class="gameplay">
+        <div class="board-container brown merida is2d">
+            <div class="cg-wrap" id="chesstrail">
+            </div>
         </div>
+        <div class="pocket is2d pocket-top usable">
+            <piece class="queen white" data-role="queen" data-color="white" data-count="1"></piece>
+            <piece class="rook white" data-role="rook" data-color="white" data-count="2"></piece>
+            <piece class="bishop white" data-role="bishop" data-color="white" data-count="2"></piece>
+            <piece class="knight white" data-role="knight" data-color="white" data-count="2"></piece>
+            <piece class="pawn white" data-role="pawn" data-color="white" data-count="8"></piece>
+        </div>
+        <div class="pocket is2d pocket-bottom usable">
+            <piece class="queen black" data-role="queen" data-color="black" data-count="1"></piece>
+            <piece class="rook black" data-role="rook" data-color="black" data-count="2"></piece>
+            <piece class="bishop black" data-role="bishop" data-color="black" data-count="2"></piece>
+            <piece class="knight black" data-role="knight" data-color="black" data-count="2"></piece>
+            <piece class="pawn black" data-role="pawn" data-color="black" data-count="8"></piece>
+        </div>
+        <form name="controls" class="controls">
+            <fieldset>
+                <legend>White</legend>
+                <div>
+                    <label>
+                        <input type="radio" name="whitePlayer" value="ai">AI
+                    </label>
+                    <label>
+                        <input type="radio" name="whitePlayer" value="human">Human
+                    </label>
+                    <label>
+                        <input type="radio" name="whitePlayer" value="random">Random
+                    </label>
+                </div>
+            </fieldset>
+            <fieldset>
+                <legend>Black</legend>
+                <div>
+                    <label>
+                        <input type="radio" name="blackPlayer" value="ai">AI
+                    </label>
+                    <label>
+                        <input type="radio" name="blackPlayer" value="human">Human
+                    </label>
+                    <label>
+                        <input type="radio" name="blackPlayer" value="random">Random
+                    </label>
+                </div>
+            </fieldset>
+            <button class="reset">Reset</button>
+        </form>
     </div>
-    <div class="pocket is2d pocket-bottom usable"></div>
-    <div class="pocket is2d pocket-top usable"></div>
+    <div class="description">
+        <h2>Rules</h2>
+        <p>
+            The game begins on an empty board. Each player has a set of chess pieces of their color. The king is not in
+            the game. On his turn a player can place a new piece and move it, or move an existing piece.
+            When a piece moves, it leaves a trail on its path. The trails affect what moves are allowed.
+            A trail must be at least two squares long, including the square with the piece.
+            A player can capture a piece by cutting its trail short.
+        </p>
+        <p>
+            Drag the pieces from the racks on the board and move them. Watching the dummy AI players for a minute is a
+            good way get some intuition about the game before reading the rules.
+        </p>
+        <p>
+            A player wins when the opponent fails to make a move.
+            For example, white wins if all black pieces on the board have been captured and the trails block placing
+            and moving a new piece.
+        </p>
+        <h4>Placing new piece</h4>
+        <p>
+            Place a piece on any square that does not have a trail. Then make a move with it.
+            The first move cannot cut trails or capture pieces.
+        </p>
+        <h4>Moving a piece</h4>
+        <p>
+            The pieces move as in the regular chess. Note that the board does not have orientation or the initial setup,
+            so the pieces can be placed anywhere and move in any direction.
+        </p>
+        <p>
+            Knight's L-shaped move leaves an ambiguous trail - it can be either two squares then one, or one square
+            then two. So after moving a knight a player may need to choose its trail.
+        </p>
+        <p>
+            The color of the pawn does not decide its direction. A pawn can even move sideways.
+            After placing a pawn, move it toward the outside of its quadrant of the board. There are two choices of
+            direction. The future moves of the pawn follow the same course. After a pawn reaches the far edge, it gets
+            promoted to queen.
+        </p>
+        <h4>Moving over the trails</h4>
+        <p>
+            Only one trail can be on a square. When a piece moves through a square that already has a trail,
+            the rules tell if it erases that part of the trail with its own, or if it must stop before crossing it.
+        </p>
+        <p>
+            A rule of thumb is that a piece can move over at most one trail. Crossing its own trail doesn't have any
+            more conditions, a piece can move backwards or cut its trail at several points. Crossing a
+            trail of another piece can only be done with a cut, intersecting it. More precisely, one trail cuts another
+            when they have one square in common.
+        </p>
+        <p>
+            The cut trail gets split into two shorter trails. If they are too short, the piece is captured.
+            If there are several valid trails, the player who did the cut chooses which trail to leave on the board. Now
+            the piece whose trail was cut is at the end of the valid trail that remained.
+        </p>
+    </div>
 </main>
-<button class="selfPlay">Self-play</button>
-<button class="aiPlay">Play against AI</button>
 <script src="dist/chesstrail.js"></script>
 <script>
     Chesstrail.run(document.getElementById('chesstrail'));

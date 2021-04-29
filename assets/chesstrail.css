@@ -1,31 +1,83 @@
 html {
-    font-size:12px
+    font-size: 12px;
+    font-family: "Noto Sans", sans-serif;
+    background-color: #edebe9;
 }
+
 @media (min-width: 320px) {
     html {
-        font-size:calc( 12px + 2 * ((100vw - 320px) / 880))
+        font-size: calc(12px + 2 * ((100vw - 320px) / 880));
     }
 }
+
 @media (min-width: 1200px) {
     html {
-        font-size:14px
+        font-size: 14px;
     }
 }
+
+:root {
+    --board-size: 320px;
+}
+
 main {
+    max-width: 800px;
+    margin: 0 auto;
+}
+
+.cg-wrap, .board-container {
+    width: var(--board-size);
+    height: var(--board-size);
+    position: relative;
+}
+
+.gameplay {
     display: grid;
-    grid-template-areas: 'board pocket-top' 'board pocket-bottom';
-    grid-template-columns: min-content 1fr;
+    grid-gap: 1em;
+    align-items: center;
+    justify-items: center;
+    grid-template-rows: 1fr min-content;
+    grid-template-areas:
+        'board'
+        'board'
+        'pocket-top'
+        'pocket-bottom'
+        'controls';
+}
+
+@media (min-width: 600px) {
+    .gameplay {
+        grid-template-areas:
+        'board controls'
+        'board pocket-top'
+        'board pocket-bottom';
+        grid-template-columns: min-content 1fr;
+    }
+    .pocket, .controls {
+        justify-self: left;
+    }
+
 }
 
 .board-container {
     grid-area: board;
+    box-shadow: 0 2px 2px 0 rgba(0,0,0,0.14),0 3px 1px -2px rgba(0,0,0,0.2),0 1px 5px 0 rgba(0,0,0,0.12);
 }
+
 .pocket-top {
     grid-area: pocket-top;
 }
 
 .pocket-bottom {
     grid-area: pocket-bottom;
+}
+
+.controls {
+    grid-area: controls;
+}
+
+.description {
+    grid-area: description;
 }
 
 .cg-trails {
@@ -45,6 +97,7 @@ main {
     fill: none;
     opacity: 1;
 }
+
 .cg-trails .trail-black {
     stroke: black;
 }

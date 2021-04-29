@@ -5,7 +5,6 @@ import {key2pos, opposite, pos2key} from 'chessground/util';
 import {Key, Color, Role, Piece} from 'chessground/types';
 import {premove} from 'chessground/premove';
 import * as cg from "chessground/types";
-import {dragNewPiece} from "chessground/drag";
 import {createElement as createSVG, setAttributes} from 'chessground/svg';
 
 /*
@@ -26,7 +25,7 @@ TODO:
 12. When cutting another trail, state.lastMove gets set to one of its paths. DONE.
 13. Update trails svg when boundsUpdated. TODO:
 14. Save dests for taking back piece. DONE.
-15: Pawn promotion should only happen when reaching the furthest edge. TODO:
+15: Pawn promotion should only happen when reaching the furthest edge. DONE.
  */
 
 export function runChesstrail(el): ChesstrailState {
@@ -72,7 +71,6 @@ export function runChesstrail(el): ChesstrailState {
             change: () => onChange(state)
         }
     });
-    makePlacementListener(state);
     return state;
 }
 
@@ -92,14 +90,12 @@ function onDropNewPiece(state: ChesstrailState, piece: Piece, key: Key) {
         return;
     }
 
-    const playerPieces = state.pieceBank.get(piece.color) as Map<Role, Number>;
-    const newPieceCount = playerPieces.get(piece.role) as number - 1;
+    const playerPieces = state.pieceBank.get(piece.color)!;
+    const newPieceCount = playerPieces.get(piece.role)! - 1;
     if (newPieceCount < 0) {
         return;
     }
     playerPieces.set(piece.role, newPieceCount);
-    const pieceEl = document.querySelector(`.pocket .${piece.role}.${piece.color}`) as HTMLElement;
-    pieceEl.dataset.count = String(newPieceCount);
 
     const pieceId = state.pieceIdCounter++;
     placePieceCG(state, piece, key);
@@ -185,14 +181,17 @@ function growTrail(state: ChesstrailState, pieceId: PieceId, trail: Key[], captu
     const dest = last(trail);
     const piece = state.cg.state.pieces.get(dest) as Piece;
 
-    const endMove = () => {
-        if (piece.role == 'pawn'
-            && isPawnPromoted(state.trails.get(pieceId)![0], dest)) {
+
+    const checkPromotion = () => {
+        if (piece.role == 'pawn'&& isPawnPromoted(state.trails.get(pieceId)![0], dest)) {
             state.cg.state.pieces.set(dest, {role: 'queen', color: piece.color, promoted: true});
         }
+    };
+    const endMove = () => {
+        checkPromotion();
         playOtherSide(state);
         setStage(state, {kind: 'MoveOrPlace'});
-    }
+    };
 
     state.pieceIds.delete(trail[0]);
     const cutSquare = trail.slice(1).find(key => state.trailMap.has(key));
@@ -249,6 +248,7 @@ function growTrail(state: ChesstrailState, pieceId: PieceId, trail: Key[], captu
         if (pieceId == cutPieceId) {
             state.cg.state.pieces.delete(dest);
         }
+        checkPromotion();
         setStage(state, {
             kind: 'ChooseTrail',
             trails: candidateTrails,
@@ -362,7 +362,7 @@ function getTrailsForMove(role: Role, orig, dest): Trail[] {
     }
 }
 
-const makeStartingPieces = () => new Map<Role, Number>([
+const makeStartingPieces = () => new Map<Role, number>([
     ['queen', 1],
     ['rook', 2],
     ['bishop', 2],
@@ -372,7 +372,7 @@ const makeStartingPieces = () => new Map<Role, Number>([
 
 export type ChesstrailState = {
     cg: Api
-    pieceBank: Map<Color, Map<Role, Number>>
+    pieceBank: Map<Color, Map<Role, number>>
     // This tracks trails of the pieces on board. It is in sync with the state.pieces
     pieceIds: Map<Key, PieceId>
     // trails and trailMap describe the same structure. This is an optimization for access by pieceId and key. They must be in sync.
@@ -419,7 +419,6 @@ function placePieceCG(state: ChesstrailState, piece: Piece, key: Key) {
 
 function onSelect(state: ChesstrailState, key: Key) {
     const stage = state.stage;
-    validateState(state);
 
     if (state.cg.state.lastMove?.length == 2 && state.cg.state.lastMove[1] == key) {
         if (stage.kind != 'ChooseTrail') {
@@ -714,58 +713,6 @@ export function getMoves(state: ChesstrailState, key: Key, allowCapture: boolean
     }
     return moves;
 }
-
-function makePlacementListener(state: ChesstrailState) {
-    const placementChoice = document.querySelector('.pocket-bottom');
-    if (placementChoice == null) {
-        throw Error('Cannot find placement choice element');
-    }
-
-    function createPieceBank(rootEl, color) {
-        for (const [role, count] of state.pieceBank.get(color)!.entries()) {
-            const c1 = document.createElement('div');
-            rootEl.insertBefore(c1, null);
-            c1.classList.add('pocket-c1');
-            const c2 = document.createElement('div');
-            c1.insertBefore(c2, null);
-            c2.classList.add('pocket-c2');
-            const piece = document.createElement('piece');
-            c2.insertBefore(piece, null);
-            piece.classList.add(role, color);
-            piece.dataset.role = role;
-            piece.dataset.color = color;
-            piece.dataset.count = String(count);
-        }
-    }
-
-    createPieceBank(document.querySelector('.pocket-bottom'), 'white');
-    createPieceBank(document.querySelector('.pocket-top'), 'black');
-    for (const evType of ['mousedown', 'touchstart']) {
-        document.querySelectorAll('.pocket').forEach(el =>
-            el.addEventListener(evType, drag));
-    }
-
-    function drag(e: cg.MouchEvent): void {
-        if (e.button !== undefined && e.button !== 0) return; // only touch or left click
-        const el = e.target as HTMLElement,
-            role = el.getAttribute('data-role') as cg.Role,
-            color = el.getAttribute('data-color') as cg.Color,
-            count = el.getAttribute('data-count');
-        if (!role || !color || count === '0') return;
-        if (color !== state.color) return;
-        e.stopPropagation();
-        e.preventDefault();
-        dragNewPiece(state.cg.state, {color, role}, e);
-    }
-
-    // function preloadMouseIcons(data: RoundData) {
-    //     const colorKey = data.player.color[0];
-    //     for (const colorKey of 'bw') {
-    //         for (const pKey of 'PNBRQ') fetch(`ass/cburnett/${colorKey}${pKey}.svg`));
-    //     }
-    // }
-}
-
 
 export type Trail = Key[];
 
